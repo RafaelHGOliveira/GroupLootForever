@@ -2,3 +2,5 @@
 .gitattributes export-ignore
 AGENTS.md export-ignore
 tests/ export-ignore
+release.ps1 export-ignore
+docs/ export-ignore

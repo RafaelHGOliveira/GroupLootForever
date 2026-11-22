@@ -6,7 +6,16 @@ does for players; this file is the workflow.
 
 Private repo github.com/RafaelHGOliveira/GroupLootForever. Commits use
 rafaelh9six@hotmail.com (set in the repo config), never the Gmail. Commit and push after
-each change, without asking. Not on CurseForge yet.
+each change, without asking. CurseForge "Group Loot Forever", project 1824599; the
+project description is pasted by hand from `docs/curseforge.md` (Markdown editor; no
+images, the repo is private).
+
+## Release
+
+`pwsh -File release.ps1 <version> <changelog.md>`, beta unless `-ReleaseType release`.
+It runs the test, bumps the `.toc`, commits "Release X", tags, pushes, uploads the
+`git archive` zip to CurseForge and copies the files into the game. Release only when
+Rafael asks.
 
 ## After each change
 

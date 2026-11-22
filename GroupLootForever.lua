@@ -6,10 +6,14 @@
 -- of each button (its tooltip gets the names) and "Pending N" beside the frame. The game
 -- closes that frame once you pick, so from then on the roll moves to a small panel of
 -- this addon's own until it ends.
--- The roll frame on this client (Mainline GroupLootFrame.xml, per GaarLootForever 1.3.1's
--- notes, 2026-11-20): GroupLootFrame1..4 inside GroupLootContainer, each with .rollID and
--- the buttons in .LootButtonContainer. Older layouts (frame.NeedButton,
--- GroupLootFrame1NeedButton) are tried too. Not seen in game by this addon yet.
+-- The roll frame on this client, seen with /glf dump on 2026-11-22: GroupLootFrame1..4,
+-- 277x67, each with .rollID, .Background, .Border, .IconFrame (.Icon, .Border), .Name,
+-- .Timer (StatusBar) and .LootButtonContainer holding NeedButton, GreedButton,
+-- PassButton and TransmogButton (atlas lootroll-toast-icon-<need|greed|pass|transmog>-up).
+-- Older layouts (frame.NeedButton, GroupLootFrame1NeedButton) are tried too.
+-- There is no GroupLootFrameTemplate, so /glf test clones GroupLootFrame1 part by part.
+-- GroupLootContainer is hidden with no anchor until a roll shows: a frame anchored to it
+-- is not drawn, so the copy and the panel use the spot saved from a real roll frame.
 --
 -- Where the picks come from:
 -- 1. The loot chat lines. Forever's GlobalStrings (build 1.60.1.70959, wago.tools) have

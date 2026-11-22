@@ -84,7 +84,12 @@ SlashCmdList = {}
 frames = {}
 local M = {}
 local function noop() end
-local meta = { __index = function(_, k) return M[k] or noop end }
+-- A widget method (CamelCase) the stub lacks is a no-op; a missing data field is nil, as in
+-- the game, so `frame.someField` checks in the addon see the truth.
+local meta = { __index = function(_, k)
+  if M[k] ~= nil then return M[k] end
+  if type(k) == "string" and k:match("^%u") then return noop end
+end }
 local function newFrame(parent)
   local f = setmetatable({ scripts = {}, shown = true, parent = parent, width = 0 }, meta)
   tinsert(frames, f)
@@ -107,10 +112,15 @@ function M:GetStringWidth() return #(rawget(self, "text") or "") * 5 end
 function M:SetWidth(w) self.width = w end
 function M:GetWidth() return self.width end
 function M:SetSize(w, h) self.width, self.height = w, h end
-function M:GetPoint() return "TOP", UIParent, "TOP", 10, -20 end
+function M:GetPoint()
+  local p = rawget(self, "point")
+  if p then return p[1], p[2], p[3], p[4], p[5] end
+  return "TOP", UIParent, "TOP", 10, -20
+end
 UIParent = newFrame()
 -- The game's templates this client has; CreateFrame with another one raises an error.
-templates = { GroupLootFrameTemplate = true }
+-- Forever has no GroupLootFrameTemplate (seen in game, 2026-11-22).
+templates = {}
 local function rollFrame(f)
   f.LootButtonContainer = newFrame(f)
   for _, k in ipairs(KEYS) do
@@ -121,6 +131,7 @@ local function rollFrame(f)
     f.LootButtonContainer[k] = b
   end
   f.scripts.OnShow = function() error("the game's own OnShow on a made-up roll") end
+  return f
 end
 KEYS = { "NeedButton", "GreedButton", "PassButton", "TransmogButton" }
 function CreateFrame(_, name, parent, template)
@@ -128,7 +139,6 @@ function CreateFrame(_, name, parent, template)
   local f = newFrame(parent)
   if name then _G[name] = f end
   if name == nil and parent == nil then events = f end
-  if template == "GroupLootFrameTemplate" then rollFrame(f) end
   return f
 end
 function M:HasScript() return true end
@@ -141,7 +151,7 @@ function M:RegisterEvent(e) local r = rawget(self, "registered") or {}; r[e] = t
 function M:HookScript(what, fn) local h = rawget(self, "hooks") or {}; h[what] = fn; self.hooks = h end
 function M:GetFrameLevel() return 1 end
 function M:GetObjectType() return "Frame" end
-function M:GetNumPoints() return 0 end
+function M:GetNumPoints() return rawget(self, "point") and 1 or 0 end
 function M:SetPoint(p, rel, rp, x, y) self.point = { p, rel, rp, x, y } end
 function M:ClearAllPoints() self.point = nil end
 
@@ -152,7 +162,7 @@ function GameTooltip:AddLine(t) tinsert(self.lines, t) end
 
 -- The game's roll frame, Mainline layout: hidden until a roll opens it. Each button's own
 -- OnEnter shows a tooltip with the button's name, as the game does.
-CreateFrame("Frame", "GroupLootFrame1", UIParent, "GroupLootFrameTemplate").shown = false
+rollFrame(CreateFrame("Frame", "GroupLootFrame1", UIParent)).shown = false
 GroupLootFrame1.scripts.OnShow = nil
 function GroupLootFrame1:GetCenter() return 640, 213 end
 function GroupLootFrame1:GetBottom() return 180 end
@@ -195,6 +205,18 @@ function visible(f)
   while f do
     if not rawget(f, "shown") then return false end
     f = rawget(f, "parent")
+  end
+  return true
+end
+
+-- Shown and with a place on screen: in the game a frame anchored to a frame with no points
+-- (GroupLootContainer before any roll) has no rect and is not drawn.
+function drawn(f)
+  if not visible(f) then return false end
+  local p = rawget(f, "point")
+  while p and type(p[2]) == "table" and p[2] ~= UIParent do
+    if p[2]:GetNumPoints() == 0 then return false end
+    p = rawget(p[2], "point")
   end
   return true
 end
@@ -536,14 +558,18 @@ def _():
     assert shown is False, shown
 
 
-@case("roll frame position: container without anchor -> bottom centre guess")
+@case("roll frame position: container without anchor -> bottom centre guess, and drawn")
 def _():
     out = table(run(r'''
+      GroupLootContainer:Hide()
       SlashCmdList.GROUPLOOTFOREVER("test")
-      local t = GroupLootForeverTestFrame.point
-      return { t[1], t[2] == UIParent, t[3], t[4], t[5] }''',
+      local f = GroupLootForeverTestFrame
+      local b = f.LootButtonContainer.GreedButton
+      local t, copyDrawn = f.point, drawn(f)
+      b.scripts.OnClick(b)
+      return { t[1], t[2] == UIParent, t[3], t[4], t[5], copyDrawn, drawn(GroupLootForeverFrame) }''',
         setup="group = {}; GroupLootContainer = CreateFrame('Frame', nil, UIParent)"))
-    assert out == ["BOTTOM", True, "BOTTOM", 0, 200], out
+    assert out == ["BOTTOM", True, "BOTTOM", 0, 200, True, True], out
 
 
 @case("roll frame position: a real roll frame seen -> saved, and the copy and panel go there")
@@ -569,6 +595,7 @@ def _():
 @case("the panel position is saved on drag and restored by /glf reset")
 def _():
     out = table(run(r'''
+      GroupLootForeverFrame:SetPoint("TOP", UIParent, "TOP", 10, -20) -- dragged there
       GroupLootForeverFrame.scripts.OnDragStop(GroupLootForeverFrame)
       local saved = GroupLootForeverDB.point and GroupLootForeverDB.point[3]
       SlashCmdList.GROUPLOOTFOREVER("reset")

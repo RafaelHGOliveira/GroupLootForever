@@ -6,7 +6,8 @@ does for players; this file is the workflow.
 
 Public repo github.com/RafaelHGOliveira/GroupLootForever (private until 2026-11-22). Commits use
 rafaelh9six@hotmail.com (set in the repo config), never the Gmail. Commit and push after
-each change, without asking. CurseForge "Group Loot Forever", project 1824599; the
+each change, without asking. CurseForge project 1824599, slug `grouplootforever`
+(https://www.curseforge.com/wow/addons/grouplootforever); the
 project description is pasted by hand from `docs/curseforge.md` (Markdown editor); it
 links the GitHub repo, and the README links the CurseForge page.
 
@@ -30,7 +31,9 @@ Rafael asks.
 README and CurseForge logo, `icon.tga` the 64 px addon list icon (Pillow resize).
 
 The test runs the real `GroupLootForever.lua` against a stubbed API with Forever's own
-chat strings. The C_LootHistory shape in the test is the retail one, a guess until a
+chat strings. The stub follows the client: no GroupLootFrameTemplate, a missing data field
+is nil, and `drawn(f)` is false for a frame anchored to one with no points. When the game
+shows something the stub allowed, fix the stub too. The C_LootHistory shape in the test is the retail one, a guess until a
 debug log from the game shows it.
 
 ## Debug log

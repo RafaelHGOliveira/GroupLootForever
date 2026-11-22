@@ -111,10 +111,59 @@ function CreateFrame(_, name, parent)
   return f
 end
 function M:RegisterEvent(e) local r = rawget(self, "registered") or {}; r[e] = true; self.registered = r end
+function M:HookScript(what, fn) local h = rawget(self, "hooks") or {}; h[what] = fn; self.hooks = h end
+function M:GetFrameLevel() return 1 end
 
 GameTooltip = setmetatable({ lines = {} }, meta)
-function GameTooltip:SetOwner() self.lines = {} end
+function GameTooltip:SetOwner(owner) self.owner = owner; self.lines = {} end
+function GameTooltip:IsOwned(owner) return rawget(self, "owner") == owner end
 function GameTooltip:AddLine(t) tinsert(self.lines, t) end
+
+-- The game's roll frame, Mainline layout: hidden until a roll opens it. Each button's own
+-- OnEnter shows a tooltip with the button's name, as the game does.
+KEYS = { "NeedButton", "GreedButton", "PassButton", "TransmogButton" }
+do
+  local f = CreateFrame("Frame", "GroupLootFrame1", UIParent)
+  f.shown = false
+  f.LootButtonContainer = {}
+  for _, k in ipairs(KEYS) do
+    local b = CreateFrame("Button", nil, f)
+    b.key = k
+    b:SetScript("OnEnter", function(self) GameTooltip:SetOwner(self); GameTooltip:AddLine(k) end)
+    f.LootButtonContainer[k] = b
+  end
+end
+function openFrame(id)
+  GroupLootFrame1.rollID, GroupLootFrame1.shown = id, true
+  local h = rawget(GroupLootFrame1, "hooks"); if h and h.OnShow then h.OnShow(GroupLootFrame1) end
+end
+function closeFrame()
+  GroupLootFrame1.shown = false
+  local h = rawget(GroupLootFrame1, "hooks"); if h and h.OnHide then h.OnHide(GroupLootFrame1) end
+end
+-- The number on a button of the game's frame, or nil when hidden.
+function badge(k)
+  local b = GroupLootFrame1.LootButtonContainer[k]
+  for _, f in ipairs(frames) do
+    if rawget(f, "parent") == b and f ~= rawget(b, "fs") and visible(f) then return f.text end
+  end
+end
+-- "Pending N" beside the game's frame, or nil when hidden.
+function pendingLabel()
+  for _, f in ipairs(frames) do
+    if rawget(f, "parent") == GroupLootFrame1 and rawget(f, "cat") and visible(f) then
+      return (f.text:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", ""))
+    end
+  end
+end
+-- Hover a button of the game's frame: its own OnEnter, then the hooked one.
+function enter(k)
+  local b = GroupLootFrame1.LootButtonContainer[k]
+  GameTooltip.lines, GameTooltip.owner = {}, nil
+  b.scripts.OnEnter(b)
+  local h = rawget(b, "hooks"); if h and h.OnEnter then h.OnEnter(b) end
+  return GameTooltip.lines
+end
 
 -- History: [encounter:list] -> drop table.
 history = {}
@@ -283,9 +332,64 @@ def _():
 def _():
     out = table(run(r'''
       items[1] = 100; fire("START_LOOT_ROLL", 1, 60000)
-      local t = timers[1].t; timers[1].fn()
-      return { t, GroupLootForeverFrame.shown }'''))
+      for _, t in ipairs(timers) do
+        if t.t > 0 then t.fn(); return { t.t, GroupLootForeverFrame.shown } end
+      end'''))
     assert out == [65, False], out
+
+
+@case("the game's frame open: numbers on its buttons, Pending beside it, no panel row")
+def _():
+    out = table(run(r'''
+      items[1] = 100; fire("START_LOOT_ROLL", 1, 60000); openFrame(1)
+      fire("CHAT_MSG_LOOT", format(LOOT_ROLL_NEED, 7, "Thrall", link(100)))
+      fire("CHAT_MSG_LOOT", format(LOOT_ROLL_NEED, 7, "Uther", link(100)))
+      fire("CHAT_MSG_LOOT", format(LOOT_ROLL_PASSED, 7, "Jaina", link(100)))
+      return { badge("NeedButton") or "-", badge("GreedButton") or "-", badge("PassButton") or "-",
+        badge("TransmogButton") or "-", pendingLabel() or "-", #shownRows(), GroupLootForeverFrame.shown }'''))
+    assert out == [2, "-", 1, "-", "Pending 1", 0, False], out
+
+
+@case("hovering the game's Need button adds the names under its own tooltip")
+def _():
+    lines = table(run(r'''
+      items[1] = 100; fire("START_LOOT_ROLL", 1, 60000); openFrame(1)
+      fire("CHAT_MSG_LOOT", format(LOOT_ROLL_NEED, 7, "Thrall", link(100)))
+      return { enter("NeedButton"), enter("GreedButton") }'''))
+    assert lines == [["NeedButton", "|cff0070ddThrall|r (34)"], ["GreedButton"]], lines
+
+
+@case("you pick, the game closes its frame: the roll moves to the panel")
+def _():
+    out = table(run(r'''
+      items[1] = 100; fire("START_LOOT_ROLL", 1, 60000); openFrame(1)
+      fire("CHAT_MSG_LOOT", format(LOOT_ROLL_GREED_SELF, 7, link(100)))
+      closeFrame()
+      return { shownRows(), badge("GreedButton") or "-", pendingLabel() or "-" }'''))
+    rows, greed, pending = out
+    assert rows[0][1] == ["Pending 3", "Need 0", "Greed 1", "Pass 0"], rows
+    assert (greed, pending) == ("-", "-"), out
+
+
+@case("the frame reused for another roll shows that roll's counts")
+def _():
+    out = table(run(r'''
+      items[1], items[2] = 100, 200
+      fire("START_LOOT_ROLL", 1, 60000); fire("START_LOOT_ROLL", 2, 60000)
+      fire("CHAT_MSG_LOOT", format(LOOT_ROLL_NEED, 7, "Thrall", link(100)))
+      openFrame(2)
+      return { badge("NeedButton") or "-", #shownRows() }'''))
+    assert out == ["-", 1], out
+
+
+@case("CANCEL_ALL_LOOT_ROLLS ends every roll")
+def _():
+    shown = run(r'''
+      items[1], items[2] = 100, 200
+      fire("START_LOOT_ROLL", 1, 60000); fire("START_LOOT_ROLL", 2, 60000)
+      fire("CANCEL_ALL_LOOT_ROLLS")
+      return GroupLootForeverFrame.shown''')
+    assert shown is False, shown
 
 
 @case("loot history players replace the group, and its states are the picks")

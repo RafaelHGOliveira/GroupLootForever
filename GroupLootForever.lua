@@ -1,6 +1,15 @@
--- Group Loot Forever: while an item is being rolled for in your group, a small panel
--- lists it and counts who picked Need, Greed, Disenchant, Transmog or Pass, and who has
--- not picked yet. Hover a count for the names, in class colours, each with its level.
+-- Group Loot Forever: counts who picked Need, Greed, Disenchant, Transmog or Pass on each
+-- group loot roll, and who has not picked yet. Names show on hover, in class colours,
+-- each with its level.
+--
+-- Where it shows: on the game's own roll frame while it is open, a number in the corner
+-- of each button (its tooltip gets the names) and "Pending N" beside the frame. The game
+-- closes that frame once you pick, so from then on the roll moves to a small panel of
+-- this addon's own until it ends.
+-- The roll frame on this client (Mainline GroupLootFrame.xml, per GaarLootForever 1.3.1's
+-- notes, 2026-11-20): GroupLootFrame1..4 inside GroupLootContainer, each with .rollID and
+-- the buttons in .LootButtonContainer. Older layouts (frame.NeedButton,
+-- GroupLootFrame1NeedButton) are tried too. Not seen in game by this addon yet.
 --
 -- Where the picks come from:
 -- 1. The loot chat lines. Forever's GlobalStrings (build 1.60.1.70959, wago.tools) have
@@ -10,10 +19,10 @@
 --    roll and stays pending.
 -- 2. C_LootHistory, the modern client's loot history (the "Waiting on:" list of the loot
 --    rolls window). When it returns players for the drop, that list replaces the group.
--- Not confirmed in game (2026-11-22): what C_LootHistory returns on Forever, and whether
--- CANCEL_LOOT_ROLL fires when you pick or when the roll ends. So a row goes away on the
--- "won" or "Everyone passed" line, when the history names a winner, or when the roll time
--- runs out, never on CANCEL_LOOT_ROLL. /glf debug logs all of it.
+-- Not confirmed in game (2026-11-22): what C_LootHistory returns on Forever. GaarLootForever
+-- says CANCEL_LOOT_ROLL comes when you pick, so a roll ends only on the "won" or "Everyone
+-- passed" line, when the history names a winner, at CANCEL_ALL_LOOT_ROLLS, or when the
+-- roll time runs out. /glf debug logs all of it.
 --
 -- Nothing here is secure code: the panel moves and updates in combat. Names and chat
 -- text can be secret values on the modern client; those are skipped.
@@ -38,6 +47,12 @@ local CATS = {
   { key = "pass", label = PASS or "Pass", color = "b0b0b0" },
 }
 addon.CATS = CATS
+local LABEL = {}
+for _, cat in ipairs(CATS) do LABEL[cat.key] = cat end
+
+-- The game's roll frame buttons, by category.
+local BUTTONS = { need = "NeedButton", greed = "GreedButton", de = "DisenchantButton",
+  transmog = "TransmogButton", pass = "PassButton" }
 
 local function secret(v) return issecretvalue ~= nil and issecretvalue(v) end
 
@@ -295,12 +310,15 @@ end
 
 local function hideTooltip() GameTooltip:Hide() end
 
-local function showNames(self)
-  local r, cat = self.roll, self.cat
-  local names = addon.names(r, cat.key)
+-- The names of one category on the tooltip. With a title, the tooltip is ours: it is
+-- cleared and titled. Without, the lines go under what the game already put there.
+local function nameLines(owner, r, key, title)
+  local names = r and addon.names(r, key) or {}
   if #names == 0 then return end
-  GameTooltip:SetOwner(self, "ANCHOR_TOP")
-  GameTooltip:AddLine(cat.label)
+  if title then
+    GameTooltip:SetOwner(owner, "ANCHOR_TOP")
+    GameTooltip:AddLine(title)
+  end
   local map = units()
   for _, name in ipairs(names) do
     local unit = map[name]
@@ -309,6 +327,10 @@ local function showNames(self)
     GameTooltip:AddLine(addon.describe(name, class, level))
   end
   GameTooltip:Show()
+end
+
+local function showNames(self)
+  nameLines(self, self.roll, self.cat.key, self.cat.label)
 end
 
 local function showItem(self)
@@ -358,10 +380,76 @@ local function fit(b)
   return b:GetWidth()
 end
 
-function refresh()
-  if #rolls == 0 then panel:Hide() return end
+-- The game's roll frame ---------------------------------------------------------------
+
+local function rollFrames()
+  local list, seen = {}, {}
+  local function add(f)
+    if type(f) == "table" and not seen[f] then seen[f] = true; list[#list + 1] = f end
+  end
+  for i = 1, 4 do add(_G["GroupLootFrame" .. i]) end
+  local c = GroupLootContainer
+  if type(c) == "table" and type(c.rollFrames) == "table" then
+    for _, f in pairs(c.rollFrames) do add(f) end
+  end
+  return list
+end
+
+local function findButton(frame, key)
+  local box = frame.LootButtonContainer
+  if type(box) == "table" and type(box[key]) == "table" then return box[key] end
+  if type(frame[key]) == "table" then return frame[key] end
+  local name = frame.GetName and frame:GetName()
+  return name and type(_G[name .. key]) == "table" and _G[name .. key] or nil
+end
+
+local function frameRoll(frame)
+  local id = frame.rollID
+  if id == nil or secret(id) or not frame:IsShown() then return nil end
+  for _, r in ipairs(rolls) do
+    if r.id == id then return r end
+  end
+end
+
+-- What this addon adds to one roll frame, made once per frame (the game reuses them).
+local decorated = {}
+local function decorate(frame)
+  local d = decorated[frame]
+  if d then return d end
+  d = { badges = {} }
+  for key, name in pairs(BUTTONS) do
+    local b = findButton(frame, name)
+    if b then
+      -- The number, on a frame of ours with the mouse off, so clicks reach the button.
+      local badge = CreateFrame("Button", nil, b)
+      badge:EnableMouse(false)
+      badge:SetSize(16, 12)
+      badge:SetPoint("BOTTOMRIGHT", b, "BOTTOMRIGHT", 3, -2)
+      badge:SetFrameLevel(b:GetFrameLevel() + 2)
+      badge:SetNormalFontObject("NumberFontNormal")
+      badge:Hide()
+      d.badges[key] = badge
+      -- Runs after the game's own OnEnter, so the names go under its tooltip.
+      b:HookScript("OnEnter", function(self)
+        local r = frameRoll(frame)
+        nameLines(self, r, key, not GameTooltip:IsOwned(self) and LABEL[key].label or nil)
+      end)
+    end
+  end
+  d.pending = textButton(frame)
+  d.pending:SetPoint("LEFT", frame, "RIGHT", 4, 0)
+  d.pending.cat = LABEL.pending
+  d.pending:SetScript("OnEnter", showNames)
+  frame:HookScript("OnShow", function() refresh() end)
+  frame:HookScript("OnHide", function() refresh() end)
+  decorated[frame] = d
+  return d
+end
+
+local function fitPanel(list)
+  if #list == 0 then panel:Hide() return end
   local width = 0
-  for i, r in ipairs(rolls) do
+  for i, r in ipairs(list) do
     local row = rows[i] or newRow(i)
     row.roll, row.item.roll = r, r
     row.icon:SetTexture(r.texture)
@@ -385,10 +473,43 @@ function refresh()
     width = math.max(width, x)
     row:Show()
   end
-  for i = #rolls + 1, #rows do rows[i]:Hide() end
-  for i = 1, #rolls do rows[i]:SetWidth(width) end
-  panel:SetSize(width + 2 * PAD, #rolls * ROW_H + 2 * PAD)
+  for i = #list + 1, #rows do rows[i]:Hide() end
+  for i = 1, #list do rows[i]:SetWidth(width) end
+  panel:SetSize(width + 2 * PAD, #list * ROW_H + 2 * PAD)
   panel:Show()
+end
+
+function refresh()
+  local onFrame = {}
+  for _, frame in ipairs(rollFrames()) do
+    local d = decorate(frame)
+    local r = frameRoll(frame)
+    if r then onFrame[r] = true end
+    for key, badge in pairs(d.badges) do
+      local n = r and #addon.names(r, key) or 0
+      if n > 0 then
+        badge:SetText(n)
+        badge:Show()
+      else
+        badge:Hide()
+      end
+    end
+    if r then
+      local n = #addon.names(r, "pending")
+      d.pending.roll = r
+      d.pending:SetText(format("|cff%sPending %d|r", n > 0 and LABEL.pending.color or "707070", n))
+      fit(d.pending)
+      d.pending:Show()
+    else
+      d.pending:Hide()
+    end
+  end
+  -- The panel keeps the rolls whose frame the game has closed: the ones you picked.
+  local list = {}
+  for _, r in ipairs(rolls) do
+    if not onFrame[r] then list[#list + 1] = r end
+  end
+  fitPanel(list)
 end
 
 -- /glf test: a made-up roll, to see and place the panel without a group.
@@ -421,8 +542,8 @@ events:SetScript("OnEvent", function(_, event, ...)
     GroupLootForeverDB = GroupLootForeverDB or {}
     GroupLootForeverDB.log = {}
     place()
-    for _, e in ipairs({ "START_LOOT_ROLL", "CANCEL_LOOT_ROLL", "CHAT_MSG_LOOT",
-      "LOOT_HISTORY_UPDATE_DROP", "GROUP_ROSTER_UPDATE" }) do
+    for _, e in ipairs({ "START_LOOT_ROLL", "CANCEL_LOOT_ROLL", "CANCEL_ALL_LOOT_ROLLS",
+      "CHAT_MSG_LOOT", "LOOT_HISTORY_UPDATE_DROP", "GROUP_ROSTER_UPDATE" }) do
       -- An event the client lacks would raise an error when registered.
       if not pcall(events.RegisterEvent, events, e) then log("no event %s", e) end
     end
@@ -432,8 +553,15 @@ events:SetScript("OnEvent", function(_, event, ...)
     end
   elseif event == "START_LOOT_ROLL" then
     startRoll(...)
+    -- The game may open its frame for this roll after this handler: look again.
+    C_Timer.After(0, refresh)
   elseif event == "CANCEL_LOOT_ROLL" then
     log("cancel roll %s", ...)
+    refresh()
+  elseif event == "CANCEL_ALL_LOOT_ROLLS" then
+    for i = #rolls, 1, -1 do
+      if rolls[i].id ~= "test" then finish(rolls[i], "cancel all") end
+    end
   elseif event == "CHAT_MSG_LOOT" then
     onChat(...)
   elseif event == "LOOT_HISTORY_UPDATE_DROP" then

@@ -2,23 +2,31 @@
 
 <p align="center"><img src="Media/logo-256.png" width="200" alt="Group Loot Forever logo"></p>
 
-A [WoW Forever](https://www.wowhead.com/forever) addon for group loot rolls. While an
-item is rolled for, a small panel lists it and counts who picked Need, Greed or Pass,
-and who has not picked yet. Hover a count for the names, in class colours, each with
-its level.
+A [WoW Forever](https://www.wowhead.com/forever) addon for group loot rolls. It counts
+who picked Need, Greed or Pass, and who has not picked yet. Hover for the names, in
+class colours, each with its level.
+
+On the game's own roll frame, each button gets a number in its corner, its tooltip
+gets the names, and "Pending N" sits beside the frame:
+
+```
+┌──────────────────────────────────────────┐
+│ [icon] Electrocutioner Leg  [Need]² [Greed]¹ [Pass]¹ │  Pending 2
+└──────────────────────────────────────────┘
+          hover Need:  Need
+                       Thrall (34)
+```
+
+The game closes that frame once you pick. From then on the roll stays in a small panel
+until it ends, so you can watch the rest of the group decide:
 
 ```
 ┌───────────────────────────────────────────────────────────────┐
 │ [icon] Electrocutioner Leg  Pending 2  Need 1  Greed 1  Pass 1 │
 └───────────────────────────────────────────────────────────────┘
-                                  hover "Pending 2":
-                                  Pending
-                                  Rexxar (31)
-                                  Valeera (32)
 ```
 
-Disenchant and Transmog get a count too, once someone picks them. The panel stays
-after you pick, until the roll is over, and it works in combat.
+Disenchant and Transmog get a count too, once someone picks them. It all works in combat.
 
 ## Install
 
@@ -29,7 +37,7 @@ Copy the `GroupLootForever` folder to
 
 | Command | |
 |---|---|
-| `/glf test` | show a made-up roll for 30 seconds, to see the panel without a group |
+| `/glf test` | show a made-up roll in the panel for 30 seconds, to place it without a group (the game's roll frame only opens on a real roll) |
 | `/glf reset` | put the panel back in its place (drag it to move it) |
 | `/glf debug` | turn the debug log on or off |
 

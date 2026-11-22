@@ -301,10 +301,13 @@ if panel.SetBackdrop then
 end
 addon.panel = panel
 
+-- Until dragged, the panel sits where the game opens its roll frames (GroupLootContainer):
+-- a roll you picked stays where its frame was.
 local function place()
   local p = GroupLootForeverDB.point
   panel:ClearAllPoints()
   if p then panel:SetPoint(p[1], UIParent, p[2], p[3], p[4])
+  elseif type(GroupLootContainer) == "table" then panel:SetPoint("BOTTOM", GroupLootContainer, "BOTTOM")
   else panel:SetPoint("TOP", UIParent, "TOP", 0, -260) end
 end
 

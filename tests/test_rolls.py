@@ -142,6 +142,8 @@ function M:HookScript(what, fn) local h = rawget(self, "hooks") or {}; h[what] =
 function M:GetFrameLevel() return 1 end
 function M:GetObjectType() return "Frame" end
 function M:GetNumPoints() return 0 end
+function M:SetPoint(p, rel, rp) self.point = { p, rel, rp } end
+function M:ClearAllPoints() self.point = nil end
 
 GameTooltip = setmetatable({ lines = {} }, meta)
 function GameTooltip:SetOwner(owner) self.owner = owner; self.lines = {} end
@@ -513,6 +515,21 @@ def _():
       return GroupLootForeverFrame.shown''')
     assert shown is False, shown
 
+
+@case("where the game opens its roll frames: the panel by default, and the test copy")
+def _():
+    out = table(run(r'''
+      SlashCmdList.GROUPLOOTFOREVER("test")
+      local p, t = GroupLootForeverFrame.point, GroupLootForeverTestFrame.point
+      return { p[1], p[2] == GroupLootContainer, p[3], t[1], t[2] == GroupLootContainer, t[3] }''',
+        setup="group = {}; GroupLootContainer = CreateFrame('Frame', nil, UIParent)"))
+    assert out == ["BOTTOM", True, "BOTTOM", "BOTTOM", True, "BOTTOM"], out
+
+
+@case("without GroupLootContainer the panel falls back to the top of the screen")
+def _():
+    out = table(run('return GroupLootForeverFrame.point'))
+    assert out[0] == "TOP", out
 
 @case("the panel position is saved on drag and restored by /glf reset")
 def _():

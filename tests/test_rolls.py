@@ -112,9 +112,9 @@ UIParent = newFrame()
 -- The game's templates this client has; CreateFrame with another one raises an error.
 templates = { GroupLootFrameTemplate = true }
 local function rollFrame(f)
-  f.LootButtonContainer = {}
+  f.LootButtonContainer = newFrame(f)
   for _, k in ipairs(KEYS) do
-    local b = newFrame(f)
+    local b = newFrame(f.LootButtonContainer)
     b.key = k
     b.scripts.OnEnter = function(self) GameTooltip:SetOwner(self); GameTooltip:AddLine(k) end
     b.scripts.OnClick = function() error("the game's own click on a made-up roll") end
@@ -140,6 +140,8 @@ end
 function M:RegisterEvent(e) local r = rawget(self, "registered") or {}; r[e] = true; self.registered = r end
 function M:HookScript(what, fn) local h = rawget(self, "hooks") or {}; h[what] = fn; self.hooks = h end
 function M:GetFrameLevel() return 1 end
+function M:GetObjectType() return "Frame" end
+function M:GetNumPoints() return 0 end
 
 GameTooltip = setmetatable({ lines = {} }, meta)
 function GameTooltip:SetOwner(owner) self.owner = owner; self.lines = {} end
@@ -485,6 +487,15 @@ def _():
     assert rows == [["|cff0070ddElectrocutioner Leg|r", ["Pending 2", "Need 1", "Greed 1", "Pass 1"]]], rows
     assert pending == ["Pending", "|cffaad372Rexxar|r (31)", "|cfffff468Valeera|r (32)"], pending
 
+
+@case("/glf test without the template logs the real frame's parts (debug on)")
+def _():
+    out = table(run(r'''
+      GroupLootForeverDB.debug = true
+      SlashCmdList.GROUPLOOTFOREVER("test")
+      return GroupLootForeverDB.log''', setup="group = {}; templates = {}"))
+    assert any(l.split(" ", 2)[2].startswith("dump GroupLootFrame1 ") for l in out), out
+    assert any("dump GroupLootFrame1.LootButtonContainer" in l for l in out), out
 
 @case("/glf test over: the copy closes and the roll is gone")
 def _():

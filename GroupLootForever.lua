@@ -526,7 +526,11 @@ local function makeTestFrame()
   if testFrame ~= nil then return testFrame end
   local ok, f = pcall(CreateFrame, "Frame", "GroupLootForeverTestFrame", UIParent, "GroupLootFrameTemplate")
   if not ok or type(f) ~= "table" then
+    -- Forever 2026-11-22: "Couldn't find inherited node 'GroupLootFrameTemplate'". Log the
+    -- real frame's parts, so a copy can be built from what it is made of.
     log("no GroupLootFrameTemplate: %s", f)
+    addon.dump(GroupLootFrame1, "GroupLootFrame1", 3)
+    addon.dump(GroupLootContainer, "GroupLootContainer", 0)
     testFrame = false
     return false
   end
@@ -573,6 +577,53 @@ local function makeTestFrame()
   end
   testFrame = f
   return f
+end
+
+-- Debug log: a frame's named parts (keys and child frames), each with its type, size,
+-- anchor, and for textures the atlas or file. Up to `depth` levels down.
+local DUMP_MAX = 300
+function addon.dump(obj, path, depth)
+  local lines = 0
+  local seen = {}
+  local function describe(o)
+    local t = o:GetObjectType()
+    local s = t
+    if o.GetSize then s = s .. format(" %dx%d", o:GetSize()) end
+    if o.GetNumPoints and o:GetNumPoints() > 0 then
+      local p, rel, rp, x, y = o:GetPoint(1)
+      s = s .. format(" %s>%s.%s %d,%d", tostring(p), rel and (rel.GetDebugName and rel:GetDebugName() or "?") or "nil",
+        tostring(rp), x or 0, y or 0)
+    end
+    if t == "Texture" then
+      s = s .. " atlas=" .. tostring(o:GetAtlas()) .. " file=" .. tostring(o:GetTexture())
+    elseif t == "FontString" then
+      s = s .. " font=" .. tostring(o:GetFontObject() and o:GetFontObject():GetName())
+    end
+    if o.IsShown then s = s .. (o:IsShown() and " shown" or " hidden") end
+    return s
+  end
+  local function walk(o, p, d)
+    if seen[o] or lines >= DUMP_MAX then return end
+    seen[o] = true
+    lines = lines + 1
+    local ok, s = pcall(describe, o)
+    log("dump %s %s", p, ok and s or ("error " .. tostring(s)))
+    if d <= 0 then return end
+    for k, v in pairs(o) do
+      if type(k) == "string" and type(v) == "table" and type(v.GetObjectType) == "function" then
+        walk(v, p .. "." .. k, d - 1)
+      end
+    end
+    -- Unnamed parts: regions (textures, font strings) and child frames.
+    if o.GetRegions then
+      for i, r in ipairs({ o:GetRegions() }) do walk(r, p .. ":region" .. i, 0) end
+    end
+    if o.GetChildren then
+      for i, c in ipairs({ o:GetChildren() }) do walk(c, p .. ":child" .. i, d - 1) end
+    end
+  end
+  if type(obj) ~= "table" then log("dump %s: missing", path) return end
+  walk(obj, path, depth)
 end
 
 local TEST = {

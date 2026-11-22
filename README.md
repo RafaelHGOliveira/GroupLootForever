@@ -37,7 +37,7 @@ Copy the `GroupLootForever` folder to
 
 | Command | |
 |---|---|
-| `/glf test` | show a made-up roll in the panel for 30 seconds, to place it without a group (the game's roll frame only opens on a real roll) |
+| `/glf test` | a made-up roll for 30 seconds, on a copy of the game's roll frame; click a button and it moves to the panel, as after a real pick. Drag the panel to place it |
 | `/glf reset` | put the panel back in its place (drag it to move it) |
 | `/glf debug` | turn the debug log on or off |
 

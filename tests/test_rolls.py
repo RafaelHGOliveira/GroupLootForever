@@ -90,8 +90,13 @@ local function newFrame(parent)
   tinsert(frames, f)
   return f
 end
-function M:Show() self.shown = true end
-function M:Hide() self.shown = false end
+-- Show and Hide run OnShow / OnHide (the script, then a hook) when the state changes.
+local function run(self, what)
+  local sc = rawget(self, "scripts"); if sc and sc[what] then sc[what](self) end
+  local h = rawget(self, "hooks"); if h and h[what] then h[what](self) end
+end
+function M:Show() if not rawget(self, "shown") then self.shown = true; run(self, "OnShow") end end
+function M:Hide() if rawget(self, "shown") then self.shown = false; run(self, "OnHide") end end
 function M:IsShown() return self.shown end
 function M:SetScript(what, fn) self.scripts[what] = fn end
 function M:CreateTexture() return newFrame(self) end
@@ -104,11 +109,33 @@ function M:GetWidth() return self.width end
 function M:SetSize(w, h) self.width, self.height = w, h end
 function M:GetPoint() return "TOP", UIParent, "TOP", 10, -20 end
 UIParent = newFrame()
-function CreateFrame(_, name, parent)
+-- The game's templates this client has; CreateFrame with another one raises an error.
+templates = { GroupLootFrameTemplate = true }
+local function rollFrame(f)
+  f.LootButtonContainer = {}
+  for _, k in ipairs(KEYS) do
+    local b = newFrame(f)
+    b.key = k
+    b.scripts.OnEnter = function(self) GameTooltip:SetOwner(self); GameTooltip:AddLine(k) end
+    b.scripts.OnClick = function() error("the game's own click on a made-up roll") end
+    f.LootButtonContainer[k] = b
+  end
+  f.scripts.OnShow = function() error("the game's own OnShow on a made-up roll") end
+end
+KEYS = { "NeedButton", "GreedButton", "PassButton", "TransmogButton" }
+function CreateFrame(_, name, parent, template)
+  if template and not templates[template] then error("no template " .. template) end
   local f = newFrame(parent)
   if name then _G[name] = f end
   if name == nil and parent == nil then events = f end
+  if template == "GroupLootFrameTemplate" then rollFrame(f) end
   return f
+end
+function M:HasScript() return true end
+function M:GetChildren()
+  local out = {}
+  for _, f in ipairs(frames) do if rawget(f, "parent") == self then tinsert(out, f) end end
+  return unpack(out)
 end
 function M:RegisterEvent(e) local r = rawget(self, "registered") or {}; r[e] = true; self.registered = r end
 function M:HookScript(what, fn) local h = rawget(self, "hooks") or {}; h[what] = fn; self.hooks = h end
@@ -121,29 +148,15 @@ function GameTooltip:AddLine(t) tinsert(self.lines, t) end
 
 -- The game's roll frame, Mainline layout: hidden until a roll opens it. Each button's own
 -- OnEnter shows a tooltip with the button's name, as the game does.
-KEYS = { "NeedButton", "GreedButton", "PassButton", "TransmogButton" }
-do
-  local f = CreateFrame("Frame", "GroupLootFrame1", UIParent)
-  f.shown = false
-  f.LootButtonContainer = {}
-  for _, k in ipairs(KEYS) do
-    local b = CreateFrame("Button", nil, f)
-    b.key = k
-    b:SetScript("OnEnter", function(self) GameTooltip:SetOwner(self); GameTooltip:AddLine(k) end)
-    f.LootButtonContainer[k] = b
-  end
-end
-function openFrame(id)
-  GroupLootFrame1.rollID, GroupLootFrame1.shown = id, true
-  local h = rawget(GroupLootFrame1, "hooks"); if h and h.OnShow then h.OnShow(GroupLootFrame1) end
-end
-function closeFrame()
-  GroupLootFrame1.shown = false
-  local h = rawget(GroupLootFrame1, "hooks"); if h and h.OnHide then h.OnHide(GroupLootFrame1) end
-end
+CreateFrame("Frame", "GroupLootFrame1", UIParent, "GroupLootFrameTemplate").shown = false
+GroupLootFrame1.scripts.OnShow = nil
+function openFrame(id) GroupLootFrame1.rollID = id; GroupLootFrame1:Show() end
+function closeFrame() GroupLootFrame1:Hide() end
+-- The roll frame the helpers below look at.
+function rf() return rollFrameUnderTest or GroupLootFrame1 end
 -- The number on a button of the game's frame, or nil when hidden.
 function badge(k)
-  local b = GroupLootFrame1.LootButtonContainer[k]
+  local b = rf().LootButtonContainer[k]
   for _, f in ipairs(frames) do
     if rawget(f, "parent") == b and f ~= rawget(b, "fs") and visible(f) then return f.text end
   end
@@ -151,14 +164,14 @@ end
 -- "Pending N" beside the game's frame, or nil when hidden.
 function pendingLabel()
   for _, f in ipairs(frames) do
-    if rawget(f, "parent") == GroupLootFrame1 and rawget(f, "cat") and visible(f) then
+    if rawget(f, "parent") == rf() and rawget(f, "cat") and visible(f) then
       return (f.text:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", ""))
     end
   end
 end
 -- Hover a button of the game's frame: its own OnEnter, then the hooked one.
 function enter(k)
-  local b = GroupLootFrame1.LootButtonContainer[k]
+  local b = rf().LootButtonContainer[k]
   GameTooltip.lines, GameTooltip.owner = {}, nil
   b.scripts.OnEnter(b)
   local h = rawget(b, "hooks"); if h and h.OnEnter then h.OnEnter(b) end
@@ -439,15 +452,47 @@ def _():
     assert rows[0][1] == ["Pending 4", "Need 0", "Greed 0", "Pass 0"], rows
 
 
-@case("/glf test shows a made-up roll with levels from its own table, solo")
+@case("/glf test opens a copy of the game's roll frame with the counts on it, solo")
 def _():
     out = table(run(r'''
       SlashCmdList.GROUPLOOTFOREVER("test")
-      return { shownRows(), hover(1, "pending") }''', setup="group = {}"))
+      rollFrameUnderTest = GroupLootForeverTestFrame
+      return { GroupLootForeverTestFrame.shown, badge("NeedButton") or "-", badge("GreedButton") or "-",
+        badge("PassButton") or "-", pendingLabel() or "-", #shownRows(), enter("NeedButton") }''', setup="group = {}"))
+    shown, need, greed, passed, pending, rows, tip = out
+    assert (shown, need, greed, passed, pending, rows) == (True, 1, 1, 1, "Pending 2", 0), out
+    assert tip == ["Need", "|cff0070ddThrall|r (34)"], tip
+
+
+@case("/glf test: a click on the copy closes it, like a pick, and the roll moves to the panel")
+def _():
+    out = table(run(r'''
+      SlashCmdList.GROUPLOOTFOREVER("test")
+      local b = GroupLootForeverTestFrame.LootButtonContainer.GreedButton
+      b.scripts.OnClick(b)
+      return { GroupLootForeverTestFrame.shown, shownRows() }''', setup="group = {}"))
+    shown, rows = out
+    assert shown is False, out
+    assert rows == [["|cff0070ddElectrocutioner Leg|r", ["Pending 2", "Need 1", "Greed 1", "Pass 1"]]], rows
+
+
+@case("/glf test without the game's template: the made-up roll goes to the panel")
+def _():
+    out = table(run(r'''
+      SlashCmdList.GROUPLOOTFOREVER("test")
+      return { shownRows(), hover(1, "pending") }''', setup="group = {}; templates = {}"))
     rows, pending = out
     assert rows == [["|cff0070ddElectrocutioner Leg|r", ["Pending 2", "Need 1", "Greed 1", "Pass 1"]]], rows
     assert pending == ["Pending", "|cffaad372Rexxar|r (31)", "|cfffff468Valeera|r (32)"], pending
 
+
+@case("/glf test over: the copy closes and the roll is gone")
+def _():
+    out = table(run(r'''
+      SlashCmdList.GROUPLOOTFOREVER("test")
+      for _, t in ipairs(timers) do if t.t == 30 then t.fn() end end
+      return { GroupLootForeverTestFrame.shown, GroupLootForeverFrame.shown }''', setup="group = {}"))
+    assert out == [False, False], out
 
 @case("leaving the group clears the rolls")
 def _():

@@ -13,7 +13,7 @@ When an item drops in your group, the roll window only shows your own choice. Gr
 
 ## Commands
 
-- `/glf test`: show a made-up roll in the panel for 30 seconds, to place it without a group
+- `/glf test`: a made-up roll for 30 seconds on a copy of the game's roll window, to see it all without a group; click a button and the roll moves to the panel, as after a real pick
 - `/glf reset`: put the panel back in its default place
 - `/glf debug`: turn the debug log on or off
 

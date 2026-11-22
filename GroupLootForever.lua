@@ -388,6 +388,7 @@ local function rollFrames()
     if type(f) == "table" and not seen[f] then seen[f] = true; list[#list + 1] = f end
   end
   for i = 1, 4 do add(_G["GroupLootFrame" .. i]) end
+  add(GroupLootForeverTestFrame)
   local c = GroupLootContainer
   if type(c) == "table" and type(c.rollFrames) == "table" then
     for _, f in pairs(c.rollFrames) do add(f) end
@@ -512,14 +513,75 @@ function refresh()
   fitPanel(list)
 end
 
--- /glf test: a made-up roll, to see and place the panel without a group.
+-- /glf test: a made-up roll. It opens on a roll frame of our own, built from the game's
+-- GroupLootFrameTemplate, so it looks like the real one; a click on a button closes it,
+-- as the game does when you pick, and the roll moves to the panel. The template's own
+-- scripts would ask the game about a roll that does not exist, so they are removed from
+-- this copy. Without the template (another client), the roll goes straight to the panel.
+local testFrame -- nil: not tried yet; false: the template is missing
+local TEST_ICON = "Interface\\Icons\\INV_Sword_04"
+local TEST_ITEM = "Electrocutioner Leg"
+
+local function makeTestFrame()
+  if testFrame ~= nil then return testFrame end
+  local ok, f = pcall(CreateFrame, "Frame", "GroupLootForeverTestFrame", UIParent, "GroupLootFrameTemplate")
+  if not ok or type(f) ~= "table" then
+    log("no GroupLootFrameTemplate: %s", f)
+    testFrame = false
+    return false
+  end
+  f:Hide()
+  f:UnregisterAllEvents()
+  local function strip(o)
+    for _, s in ipairs({ "OnShow", "OnHide", "OnEvent", "OnUpdate" }) do
+      if o:HasScript(s) then o:SetScript(s, nil) end
+    end
+    for _, c in ipairs({ o:GetChildren() }) do strip(c) end
+  end
+  strip(f)
+  for k, v in pairs(f) do
+    if type(v) == "table" and type(v.GetObjectType) == "function" then
+      log("test frame .%s %s", k, v:GetObjectType())
+    end
+  end
+  -- Set before decorate() hooks OnEnter: SetScript would drop that hook.
+  for key, name in pairs(BUTTONS) do
+    local b = findButton(f, name)
+    if b then
+      b:Enable()
+      b:SetScript("OnClick", function() f:Hide() end)
+      b:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:AddLine(LABEL[key].label)
+        GameTooltip:Show()
+      end)
+      b:SetScript("OnLeave", hideTooltip)
+    end
+  end
+  local icon = type(f.IconFrame) == "table" and f.IconFrame.Icon
+  if type(icon) == "table" then icon:SetTexture(TEST_ICON) end
+  if type(f.Name) == "table" then f.Name:SetText("|cff0070dd" .. TEST_ITEM .. "|r") end
+  if type(f.Timer) == "table" then
+    f.Timer:SetMinMaxValues(0, 1)
+    f.Timer:SetValue(1)
+  end
+  f:ClearAllPoints()
+  if type(GroupLootContainer) == "table" then
+    f:SetPoint("BOTTOM", GroupLootContainer, "BOTTOM")
+  else
+    f:SetPoint("CENTER", UIParent, "CENTER", 0, -120)
+  end
+  testFrame = f
+  return f
+end
+
 local TEST = {
   { "Thrall", "SHAMAN", 34, "need" }, { "Jaina", "MAGE", 33, "greed" },
   { "Uther", "PALADIN", 35, "pass" }, { "Valeera", "ROGUE", 32 }, { "Rexxar", "HUNTER", 31 },
 }
 local function testRoll()
-  local r = { id = "test", name = "Electrocutioner Leg", quality = 3,
-    texture = "Interface\\Icons\\INV_Sword_04", who = {}, choice = {}, class = {}, level = {} }
+  local r = { id = "test", name = TEST_ITEM, quality = 3,
+    texture = TEST_ICON, who = {}, choice = {}, class = {}, level = {} }
   for _, t in ipairs(TEST) do
     r.who[t[1]], r.class[t[1]], r.level[t[1]], r.choice[t[1]] = true, t[2], t[3], t[4]
   end
@@ -527,7 +589,15 @@ local function testRoll()
     if x.id == "test" then finish(x, "test again") break end
   end
   tinsert(rolls, r)
-  C_Timer.After(TEST_TIME, function() finish(r, "test over") end)
+  C_Timer.After(TEST_TIME, function()
+    if testFrame then testFrame:Hide() end
+    finish(r, "test over")
+  end)
+  local f = makeTestFrame()
+  if f then
+    f.rollID = "test"
+    f:Show()
+  end
   refresh()
 end
 addon.testRoll = testRoll

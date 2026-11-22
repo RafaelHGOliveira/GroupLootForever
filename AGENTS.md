@@ -4,11 +4,11 @@ WoW Forever addon: a panel that counts the picks of each group loot roll (pendin
 Greed, Disenchant, Transmog, Pass) and lists the names on hover. The README says what it
 does for players; this file is the workflow.
 
-Private repo github.com/RafaelHGOliveira/GroupLootForever. Commits use
+Public repo github.com/RafaelHGOliveira/GroupLootForever (private until 2026-11-22). Commits use
 rafaelh9six@hotmail.com (set in the repo config), never the Gmail. Commit and push after
 each change, without asking. CurseForge "Group Loot Forever", project 1824599; the
-project description is pasted by hand from `docs/curseforge.md` (Markdown editor; no
-images, the repo is private).
+project description is pasted by hand from `docs/curseforge.md` (Markdown editor); it
+links the GitHub repo, and the README links the CurseForge page.
 
 ## Release
 

@@ -23,10 +23,14 @@ When an item drops in your group, the roll window only shows your own choice. Gr
 Players out of range of the loot get no roll. The addon counts everyone online in the group when the roll starts, so they stay pending until the roll ends, unless the game's loot history lists the real participants.
 
 **Something looks wrong. What do I send?**
-Type `/glf debug`, roll for some loot in a group, then `/reload`. Attach `WTF\Account\<account>\SavedVariables\GroupLootForever.lua` to a comment here.
+Type `/glf debug`, roll for some loot in a group, then `/reload`. Attach `WTF\Account\<account>\SavedVariables\GroupLootForever.lua` to a comment here or to a [GitHub issue](https://github.com/RafaelHGOliveira/GroupLootForever/issues).
 
 ## Supported versions
 
 WoW Forever (1.60.1). This is a first version: feedback from real groups is welcome.
+
+## Source
+
+Code and issues: [github.com/RafaelHGOliveira/GroupLootForever](https://github.com/RafaelHGOliveira/GroupLootForever). Bug reports are welcome there too.
 
 MIT license.

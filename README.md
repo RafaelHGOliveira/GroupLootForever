@@ -30,7 +30,7 @@ Disenchant and Transmog get a count too, once someone picks them. It all works i
 
 ## Install
 
-Copy the `GroupLootForever` folder to
+Get it from [CurseForge](https://www.curseforge.com/projects/1824599), or copy the `GroupLootForever` folder to
 `World of Warcraft\_forever_\Interface\AddOns\GroupLootForever`, then log in or `/reload`.
 
 ## Commands

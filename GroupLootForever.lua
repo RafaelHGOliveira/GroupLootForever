@@ -301,14 +301,40 @@ if panel.SetBackdrop then
 end
 addon.panel = panel
 
--- Until dragged, the panel sits where the game opens its roll frames (GroupLootContainer):
--- a roll you picked stays where its frame was.
+-- Where the game opens its roll frames. GroupLootContainer has no anchor until a roll
+-- shows (Forever 2026-11-22: "Button 256x1 hidden", no points), and a frame anchored to
+-- it is not drawn. So: the container once it has an anchor, else where a real roll frame
+-- was last seen (saved), else the bottom centre of the screen, a guess.
+local function atRollFrames(f)
+  f:ClearAllPoints()
+  local c, at = GroupLootContainer, GroupLootForeverDB.rollAt
+  if type(c) == "table" and c:GetNumPoints() > 0 then
+    f:SetPoint("BOTTOM", c, "BOTTOM")
+  elseif at then
+    f:SetPoint("BOTTOM", UIParent, "BOTTOMLEFT", at[1], at[2])
+  else
+    f:SetPoint("BOTTOM", UIParent, "BOTTOM", 0, 200)
+  end
+end
+
+-- A real roll frame on screen: remember its bottom centre, in UIParent units.
+local function seeRollFrame(frame)
+  local x, y = frame:GetCenter(), frame:GetBottom()
+  if not x or not y then return end
+  local s = frame:GetEffectiveScale() / UIParent:GetEffectiveScale()
+  GroupLootForeverDB.rollAt = { x * s, y * s }
+end
+
+-- Until dragged, the panel sits where the game opens its roll frames: a roll you picked
+-- stays where its frame was.
 local function place()
   local p = GroupLootForeverDB.point
-  panel:ClearAllPoints()
-  if p then panel:SetPoint(p[1], UIParent, p[2], p[3], p[4])
-  elseif type(GroupLootContainer) == "table" then panel:SetPoint("BOTTOM", GroupLootContainer, "BOTTOM")
-  else panel:SetPoint("TOP", UIParent, "TOP", 0, -260) end
+  if p then
+    panel:ClearAllPoints()
+    panel:SetPoint(p[1], UIParent, p[2], p[3], p[4])
+  else
+    atRollFrames(panel)
+  end
 end
 
 local function hideTooltip() GameTooltip:Hide() end
@@ -426,6 +452,7 @@ local function decorate(frame)
     if b then
       -- The number, on a frame of ours with the mouse off, so clicks reach the button.
       local badge = CreateFrame("Button", nil, b)
+      badge.glfOwn = true
       badge:EnableMouse(false)
       badge:SetSize(16, 12)
       badge:SetPoint("BOTTOMRIGHT", b, "BOTTOMRIGHT", 3, -2)
@@ -441,6 +468,7 @@ local function decorate(frame)
     end
   end
   d.pending = textButton(frame)
+  d.pending.glfOwn = true
   d.pending:SetPoint("LEFT", frame, "RIGHT", 4, 0)
   d.pending.cat = LABEL.pending
   d.pending:SetScript("OnEnter", showNames)
@@ -480,6 +508,7 @@ local function fitPanel(list)
   for i = #list + 1, #rows do rows[i]:Hide() end
   for i = 1, #list do rows[i]:SetWidth(width) end
   panel:SetSize(width + 2 * PAD, #list * ROW_H + 2 * PAD)
+  place()
   panel:Show()
 end
 
@@ -489,6 +518,7 @@ function refresh()
     local d = decorate(frame)
     local r = frameRoll(frame)
     if r then onFrame[r] = true end
+    if r and frame ~= GroupLootForeverTestFrame then seeRollFrame(frame) end
     for key, badge in pairs(d.badges) do
       local n = r and #addon.names(r, key) or 0
       if n > 0 then
@@ -516,46 +546,113 @@ function refresh()
   fitPanel(list)
 end
 
--- /glf test: a made-up roll. It opens on a roll frame of our own, built from the game's
--- GroupLootFrameTemplate, so it looks like the real one; a click on a button closes it,
--- as the game does when you pick, and the roll moves to the panel. The template's own
--- scripts would ask the game about a roll that does not exist, so they are removed from
--- this copy. Without the template (another client), the roll goes straight to the panel.
-local testFrame -- nil: not tried yet; false: the template is missing
+-- /glf test: a made-up roll, on a copy of the game's roll frame, so it looks like the real
+-- one. Forever has no GroupLootFrameTemplate to build one from (2026-11-22: "Couldn't find
+-- inherited node"), so the copy is cloned from GroupLootFrame1, part by part: every shown
+-- texture (same atlas, or file and tex coords, same draw layer), font string and child
+-- frame, with the same sizes and anchors, and the same keys (.Name, .IconFrame.Icon,
+-- .LootButtonContainer.NeedButton...). Nothing of the game's runs on it. A click on a
+-- button closes it, as the game does when you pick, and the roll moves to the panel.
+-- Without GroupLootFrame1, the roll goes straight to the panel.
+local testFrame -- nil: not built yet; false: nothing to copy
 local TEST_ICON = "Interface\\Icons\\INV_Sword_04"
 local TEST_ITEM = "Electrocutioner Leg"
+local FRAME_TYPES = { Button = "Button", StatusBar = "StatusBar" }
+
+-- A hidden frame reports 0x0 for parts sized by two anchors; those keep the anchors only.
+local function copySize(c, o)
+  local w, h = o:GetSize()
+  if w and h and w > 0 and h > 0 then c:SetSize(w, h) end
+end
+
+local function cloneFrame(src, name)
+  local map, made = {}, {}
+  local function region(r, parent)
+    if not r:IsShown() then return end
+    local t, c = r:GetObjectType()
+    if t == "Texture" then
+      local layer, sub = r:GetDrawLayer()
+      c = parent:CreateTexture(nil, layer, nil, sub)
+      local atlas = r:GetAtlas()
+      if atlas then
+        c:SetAtlas(atlas)
+      else
+        c:SetTexture(r:GetTexture())
+        c:SetTexCoord(r:GetTexCoord())
+      end
+      c:SetVertexColor(r:GetVertexColor())
+      c:SetBlendMode(r:GetBlendMode())
+    elseif t == "FontString" then
+      c = parent:CreateFontString(nil, (r:GetDrawLayer()))
+      c:SetFontObject(r:GetFontObject() or GameFontNormal)
+      c:SetJustifyH(r:GetJustifyH())
+      c:SetJustifyV(r:GetJustifyV())
+    else
+      return
+    end
+    copySize(c, r)
+    c:SetAlpha(r:GetAlpha())
+    map[r] = c
+    made[#made + 1] = r
+  end
+  local function frame(f, parent)
+    local c = CreateFrame(FRAME_TYPES[f:GetObjectType()] or "Frame", parent == UIParent and name or nil, parent)
+    copySize(c, f)
+    map[f] = c
+    made[#made + 1] = f
+    local bar = f.GetStatusBarTexture and f:GetStatusBarTexture()
+    if bar then
+      c:SetStatusBarTexture(bar:GetTexture())
+      c:SetStatusBarColor(f:GetStatusBarColor())
+      c:SetMinMaxValues(0, 1)
+      c:SetValue(1)
+    end
+    for _, r in ipairs({ f:GetRegions() }) do
+      if r ~= bar then region(r, c) end
+    end
+    for _, child in ipairs({ f:GetChildren() }) do
+      -- Not this addon's own number and "Pending" hung on the real frame.
+      if child:IsShown() and child.glfOwn ~= true then frame(child, c) end
+    end
+  end
+  frame(src, UIParent)
+  -- Anchors and keys once everything exists: a part may hang on a later one (the
+  -- Transmog button sits on the Greed button).
+  for _, s in ipairs(made) do
+    local c = map[s]
+    if s ~= src then
+      c:ClearAllPoints()
+      for i = 1, s:GetNumPoints() do
+        local p, rel, rp, x, y = s:GetPoint(i)
+        local to = map[rel]
+        if to then c:SetPoint(p, to, rp, x, y) end
+      end
+    end
+    for k, v in pairs(s) do
+      if type(k) == "string" and map[v] then c[k] = map[v] end
+    end
+  end
+  return map[src]
+end
 
 local function makeTestFrame()
   if testFrame ~= nil then return testFrame end
-  local ok, f = pcall(CreateFrame, "Frame", "GroupLootForeverTestFrame", UIParent, "GroupLootFrameTemplate")
-  if not ok or type(f) ~= "table" then
-    -- Forever 2026-11-22: "Couldn't find inherited node 'GroupLootFrameTemplate'". Log the
-    -- real frame's parts, so a copy can be built from what it is made of.
-    log("no GroupLootFrameTemplate: %s", f)
-    addon.dump(GroupLootFrame1, "GroupLootFrame1", 3)
-    addon.dump(GroupLootContainer, "GroupLootContainer", 0)
+  if type(GroupLootFrame1) ~= "table" then
+    testFrame = false
+    return false
+  end
+  local ok, f = pcall(cloneFrame, GroupLootFrame1, "GroupLootForeverTestFrame")
+  if not ok then
+    log("test frame copy failed: %s", f)
     testFrame = false
     return false
   end
   f:Hide()
-  f:UnregisterAllEvents()
-  local function strip(o)
-    for _, s in ipairs({ "OnShow", "OnHide", "OnEvent", "OnUpdate" }) do
-      if o:HasScript(s) then o:SetScript(s, nil) end
-    end
-    for _, c in ipairs({ o:GetChildren() }) do strip(c) end
-  end
-  strip(f)
-  for k, v in pairs(f) do
-    if type(v) == "table" and type(v.GetObjectType) == "function" then
-      log("test frame .%s %s", k, v:GetObjectType())
-    end
-  end
+  f:SetFrameStrata("DIALOG")
   -- Set before decorate() hooks OnEnter: SetScript would drop that hook.
   for key, name in pairs(BUTTONS) do
     local b = findButton(f, name)
     if b then
-      b:Enable()
       b:SetScript("OnClick", function() f:Hide() end)
       b:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
@@ -565,23 +662,15 @@ local function makeTestFrame()
       b:SetScript("OnLeave", hideTooltip)
     end
   end
+  -- The game shows Transmog or Greed in the same spot; the copy keeps Greed.
+  local transmog = findButton(f, "TransmogButton")
+  if transmog then transmog:Hide() end
   local icon = type(f.IconFrame) == "table" and f.IconFrame.Icon
   if type(icon) == "table" then icon:SetTexture(TEST_ICON) end
   if type(f.Name) == "table" then f.Name:SetText("|cff0070dd" .. TEST_ITEM .. "|r") end
-  if type(f.Timer) == "table" then
-    f.Timer:SetMinMaxValues(0, 1)
-    f.Timer:SetValue(1)
-  end
-  f:ClearAllPoints()
-  if type(GroupLootContainer) == "table" then
-    f:SetPoint("BOTTOM", GroupLootContainer, "BOTTOM")
-  else
-    f:SetPoint("CENTER", UIParent, "CENTER", 0, -120)
-  end
   testFrame = f
   return f
 end
-
 -- Debug log: a frame's named parts (keys and child frames), each with its type, size,
 -- anchor, and for textures the atlas or file. Up to `depth` levels down.
 local DUMP_MAX = 300
@@ -649,6 +738,7 @@ local function testRoll()
   end)
   local f = makeTestFrame()
   if f then
+    atRollFrames(f)
     f.rollID = "test"
     f:Show()
   end
@@ -712,6 +802,13 @@ SlashCmdList.GROUPLOOTFOREVER = function(msg)
     GroupLootForeverDB.point = nil
     place()
     say("panel back in its place.")
+  elseif msg == "dump" then
+    -- The real roll frame and the test copy, part by part, into the debug log.
+    addon.dump(GroupLootFrame1, "GroupLootFrame1", 3)
+    addon.dump(GroupLootForeverTestFrame, "GroupLootForeverTestFrame", 3)
+    addon.dump(GroupLootContainer, "GroupLootContainer", 0)
+    say(GroupLootForeverDB.debug and "roll frames written to the debug log: /reload saves it."
+      or "turn on /glf debug first.")
   elseif msg == "debug" then
     GroupLootForeverDB.debug = not GroupLootForeverDB.debug
     say("debug log " .. (GroupLootForeverDB.debug and "on: /reload saves it." or "off."))

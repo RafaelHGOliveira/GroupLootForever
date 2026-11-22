@@ -142,7 +142,7 @@ function M:HookScript(what, fn) local h = rawget(self, "hooks") or {}; h[what] =
 function M:GetFrameLevel() return 1 end
 function M:GetObjectType() return "Frame" end
 function M:GetNumPoints() return 0 end
-function M:SetPoint(p, rel, rp) self.point = { p, rel, rp } end
+function M:SetPoint(p, rel, rp, x, y) self.point = { p, rel, rp, x, y } end
 function M:ClearAllPoints() self.point = nil end
 
 GameTooltip = setmetatable({ lines = {} }, meta)
@@ -154,6 +154,9 @@ function GameTooltip:AddLine(t) tinsert(self.lines, t) end
 -- OnEnter shows a tooltip with the button's name, as the game does.
 CreateFrame("Frame", "GroupLootFrame1", UIParent, "GroupLootFrameTemplate").shown = false
 GroupLootFrame1.scripts.OnShow = nil
+function GroupLootFrame1:GetCenter() return 640, 213 end
+function GroupLootFrame1:GetBottom() return 180 end
+function M:GetEffectiveScale() return 1 end
 function openFrame(id) GroupLootFrame1.rollID = id; GroupLootFrame1:Show() end
 function closeFrame() GroupLootFrame1:Hide() end
 -- The roll frame the helpers below look at.
@@ -480,24 +483,41 @@ def _():
     assert rows == [["|cff0070ddElectrocutioner Leg|r", ["Pending 2", "Need 1", "Greed 1", "Pass 1"]]], rows
 
 
-@case("/glf test without the game's template: the made-up roll goes to the panel")
+@case("/glf test without GroupLootFrame1 to copy: the made-up roll goes to the panel")
 def _():
     out = table(run(r'''
       SlashCmdList.GROUPLOOTFOREVER("test")
-      return { shownRows(), hover(1, "pending") }''', setup="group = {}; templates = {}"))
+      return { shownRows(), hover(1, "pending") }''', setup="group = {}; GroupLootFrame1 = nil"))
     rows, pending = out
     assert rows == [["|cff0070ddElectrocutioner Leg|r", ["Pending 2", "Need 1", "Greed 1", "Pass 1"]]], rows
     assert pending == ["Pending", "|cffaad372Rexxar|r (31)", "|cfffff468Valeera|r (32)"], pending
 
 
-@case("/glf test without the template logs the real frame's parts (debug on)")
+@case("the copy is a clone: the same keys, not the game's scripts, not this addon's own parts")
+def _():
+    out = table(run(r'''
+      items[1] = 100; fire("START_LOOT_ROLL", 1, 60000); openFrame(1); closeFrame()
+      SlashCmdList.GROUPLOOTFOREVER("test")
+      local f = GroupLootForeverTestFrame
+      local b = f.LootButtonContainer.NeedButton
+      local ownParts = 0
+      for _, x in ipairs(frames) do
+        if rawget(x, "glfOwn") and rawget(x, "parent") == b then ownParts = ownParts + 1 end
+      end
+      return { f ~= GroupLootFrame1, b ~= GroupLootFrame1.LootButtonContainer.NeedButton,
+        f.LootButtonContainer.TransmogButton.shown, ownParts }''', setup="group = {}"))
+    # One number on the copy's Need button: its own, not also the one cloned from the real frame.
+    assert out == [True, True, False, 1], out
+
+@case("/glf dump logs the real roll frame and the copy (debug on)")
 def _():
     out = table(run(r'''
       GroupLootForeverDB.debug = true
       SlashCmdList.GROUPLOOTFOREVER("test")
-      return GroupLootForeverDB.log''', setup="group = {}; templates = {}"))
-    assert any(l.split(" ", 2)[2].startswith("dump GroupLootFrame1 ") for l in out), out
-    assert any("dump GroupLootFrame1.LootButtonContainer" in l for l in out), out
+      SlashCmdList.GROUPLOOTFOREVER("dump")
+      return GroupLootForeverDB.log''', setup="group = {}"))
+    assert any(" dump GroupLootFrame1.LootButtonContainer" in l for l in out), out
+    assert any(" dump GroupLootForeverTestFrame.LootButtonContainer" in l for l in out), out
 
 @case("/glf test over: the copy closes and the roll is gone")
 def _():
@@ -516,20 +536,35 @@ def _():
     assert shown is False, shown
 
 
-@case("where the game opens its roll frames: the panel by default, and the test copy")
+@case("roll frame position: container without anchor -> bottom centre guess")
 def _():
     out = table(run(r'''
       SlashCmdList.GROUPLOOTFOREVER("test")
-      local p, t = GroupLootForeverFrame.point, GroupLootForeverTestFrame.point
-      return { p[1], p[2] == GroupLootContainer, p[3], t[1], t[2] == GroupLootContainer, t[3] }''',
+      local t = GroupLootForeverTestFrame.point
+      return { t[1], t[2] == UIParent, t[3], t[4], t[5] }''',
         setup="group = {}; GroupLootContainer = CreateFrame('Frame', nil, UIParent)"))
-    assert out == ["BOTTOM", True, "BOTTOM", "BOTTOM", True, "BOTTOM"], out
+    assert out == ["BOTTOM", True, "BOTTOM", 0, 200], out
 
 
-@case("without GroupLootContainer the panel falls back to the top of the screen")
+@case("roll frame position: a real roll frame seen -> saved, and the copy and panel go there")
 def _():
-    out = table(run('return GroupLootForeverFrame.point'))
-    assert out[0] == "TOP", out
+    out = table(run(r'''
+      items[1] = 100; fire("START_LOOT_ROLL", 1, 60000); openFrame(1); closeFrame()
+      SlashCmdList.GROUPLOOTFOREVER("test")
+      local t, p = GroupLootForeverTestFrame.point, GroupLootForeverFrame.point
+      return { GroupLootForeverDB.rollAt, t[3], t[4], t[5], p[3], p[4], p[5] }'''))
+    assert out == [[640, 180], "BOTTOMLEFT", 640, 180, "BOTTOMLEFT", 640, 180], out
+
+
+@case("roll frame position: the container once it has an anchor")
+def _():
+    out = table(run(r'''
+      function GroupLootContainer:GetNumPoints() return 1 end
+      SlashCmdList.GROUPLOOTFOREVER("test")
+      local t = GroupLootForeverTestFrame.point
+      return { t[1], t[2] == GroupLootContainer, t[3] }''',
+        setup="group = {}; GroupLootContainer = CreateFrame('Frame', nil, UIParent)"))
+    assert out == ["BOTTOM", True, "BOTTOM"], out
 
 @case("the panel position is saved on drag and restored by /glf reset")
 def _():

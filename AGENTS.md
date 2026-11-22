@@ -14,7 +14,11 @@ each change, without asking. Not on CurseForge yet.
    line, history field or end condition gets its case.
 2. Commit and push.
 3. Copy `GroupLootForever.lua` and `GroupLootForever.toc` to
-   `C:\Program Files (x86)\World of Warcraft\_forever_\Interface\AddOns\GroupLootForever\`.
+   `C:\Program Files (x86)\World of Warcraft\_forever_\Interface\AddOns\GroupLootForever\`
+   (and `Media\icon.tga` to its `Media\` when the icon changes).
+
+`Media/logo.png` is the 1024 px original (Gemini, 2026-11-22); `logo-256.png` is the
+README and CurseForge logo, `icon.tga` the 64 px addon list icon (Pillow resize).
 
 The test runs the real `GroupLootForever.lua` against a stubbed API with Forever's own
 chat strings. The C_LootHistory shape in the test is the retail one, a guess until a

@@ -1,5 +1,7 @@
 # Group Loot Forever
 
+<p align="center"><img src="Media/logo-256.png" width="200" alt="Group Loot Forever logo"></p>
+
 A [WoW Forever](https://www.wowhead.com/forever) addon for group loot rolls. While an
 item is rolled for, a small panel lists it and counts who picked Need, Greed or Pass,
 and who has not picked yet. Hover a count for the names, in class colours, each with

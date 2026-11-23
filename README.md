@@ -6,12 +6,13 @@ A [WoW Forever](https://www.wowhead.com/forever) addon for group loot rolls. It 
 who picked Need, Greed or Pass, and who has not picked yet. Hover for the names, in
 class colours, each with its level.
 
-On the game's own roll frame, each button gets a number in its corner, its tooltip
-gets the names, and "Pending N" sits beside the frame:
+On the game's own roll frame, each button gets a number in its corner and its tooltip
+gets the names. The pending count, in gold, sits left of the Need and Greed buttons
+(hover it for the names):
 
 ```
 ┌──────────────────────────────────────────┐
-│ [icon] Electrocutioner Leg  [Need]² [Greed]¹ [Pass]¹ │  Pending 2
+│ [icon] Electrocutioner Leg  2 [Need]² [Greed]¹ [Pass]¹ │
 └──────────────────────────────────────────┘
           hover Need:  Need
                        Thrall (34)

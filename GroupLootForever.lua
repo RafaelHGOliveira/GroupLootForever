@@ -3,9 +3,11 @@
 -- each with its level.
 --
 -- Where it shows: on the game's own roll frame while it is open, a number in the corner
--- of each button (its tooltip gets the names) and "Pending N" beside the frame. The game
--- closes that frame once you pick, so from then on the roll moves to a small panel of
--- this addon's own until it ends.
+-- of each button (its tooltip gets the names) and the pending count, in gold, left of the
+-- Need and Greed buttons. The game closes that frame once you pick, so from then on the
+-- roll moves to a small panel of this addon's own until it ends.
+-- "Pending N" beside the frame, outside its right edge, showed on the /glf test copy but
+-- not on a real roll (2026-11-23, cause not found), so the count now sits inside the frame.
 -- The roll frame on this client, seen with /glf dump on 2026-11-22: GroupLootFrame1..4,
 -- 277x67, each with .rollID, .Background, .Border, .IconFrame (.Icon, .Border), .Name,
 -- .Timer (StatusBar) and .LootButtonContainer holding NeedButton, GreedButton,
@@ -471,11 +473,20 @@ local function decorate(frame)
       end)
     end
   end
-  d.pending = textButton(frame)
-  d.pending.glfOwn = true
-  d.pending:SetPoint("LEFT", frame, "RIGHT", 4, 0)
-  d.pending.cat = LABEL.pending
-  d.pending:SetScript("OnEnter", showNames)
+  -- The pending count, left of the Need button's bottom corner: between Need and Greed.
+  local need = findButton(frame, BUTTONS.need)
+  if need then
+    d.pending = CreateFrame("Button", nil, frame)
+    d.pending.glfOwn = true
+    d.pending:SetSize(20, 14)
+    d.pending:SetPoint("RIGHT", need, "BOTTOMLEFT", -2, 0)
+    d.pending:SetFrameLevel(need:GetFrameLevel() + 2)
+    d.pending:SetNormalFontObject("NumberFontNormal")
+    d.pending.cat = LABEL.pending
+    d.pending:SetScript("OnEnter", showNames)
+    d.pending:SetScript("OnLeave", hideTooltip)
+    d.pending:Hide()
+  end
   frame:HookScript("OnShow", function() refresh() end)
   frame:HookScript("OnHide", function() refresh() end)
   decorated[frame] = d
@@ -532,14 +543,15 @@ function refresh()
         badge:Hide()
       end
     end
-    if r then
-      local n = #addon.names(r, "pending")
+    if d.pending then
+      local n = r and #addon.names(r, "pending") or 0
       d.pending.roll = r
-      d.pending:SetText(format("|cff%sPending %d|r", n > 0 and LABEL.pending.color or "707070", n))
-      fit(d.pending)
-      d.pending:Show()
-    else
-      d.pending:Hide()
+      if n > 0 then
+        d.pending:SetText(format("|cff%s%d|r", LABEL.pending.color, n))
+        d.pending:Show()
+      else
+        d.pending:Hide()
+      end
     end
   end
   -- The panel keeps the rolls whose frame the game has closed: the ones you picked.

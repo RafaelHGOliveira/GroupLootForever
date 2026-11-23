@@ -4,7 +4,7 @@ When an item drops in your group, the roll window only shows your own choice. Gr
 
 ## At a glance
 
-- **On the game's own roll window:** a number in the corner of the Need, Greed and Pass buttons, and **Pending N** beside the window.
+- **On the game's own roll window:** a number in the corner of the Need, Greed and Pass buttons, and the **pending** count in gold, left of Need and Greed.
 - **Names on hover:** hover a button and its tooltip lists who picked it, each name in its class colour with the level in brackets, e.g. *Thrall (34)*.
 - **After you pick:** the game closes its roll window, so the roll moves to a small panel with the same counts (Pending, Need, Greed, Pass) until it ends. You can watch the rest of the group decide.
 - **Disenchant and Transmog** get a count too, once someone picks them.

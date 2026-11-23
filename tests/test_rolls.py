@@ -178,12 +178,18 @@ function badge(k)
     if rawget(f, "parent") == b and f ~= rawget(b, "fs") and visible(f) then return f.text end
   end
 end
--- "Pending N" beside the game's frame, or nil when hidden.
+-- The pending count on the game's frame, or nil when hidden.
 function pendingLabel()
   for _, f in ipairs(frames) do
     if rawget(f, "parent") == rf() and rawget(f, "cat") and visible(f) then
       return (f.text:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", ""))
     end
+  end
+end
+-- What the pending count hangs on: inside the frame, never outside its edge.
+function pendingAnchor()
+  for _, f in ipairs(frames) do
+    if rawget(f, "parent") == rf() and rawget(f, "cat") then return f.point[2] end
   end
 end
 -- Hover a button of the game's frame: its own OnEnter, then the hooked one.
@@ -380,7 +386,7 @@ def _():
     assert out == [65, False], out
 
 
-@case("the game's frame open: numbers on its buttons, Pending beside it, no panel row")
+@case("the game's frame open: numbers on its buttons, pending left of Need, no panel row")
 def _():
     out = table(run(r'''
       items[1] = 100; fire("START_LOOT_ROLL", 1, 60000); openFrame(1)
@@ -388,8 +394,9 @@ def _():
       fire("CHAT_MSG_LOOT", format(LOOT_ROLL_NEED, 7, "Uther", link(100)))
       fire("CHAT_MSG_LOOT", format(LOOT_ROLL_PASSED, 7, "Jaina", link(100)))
       return { badge("NeedButton") or "-", badge("GreedButton") or "-", badge("PassButton") or "-",
-        badge("TransmogButton") or "-", pendingLabel() or "-", #shownRows(), GroupLootForeverFrame.shown }'''))
-    assert out == [2, "-", 1, "-", "Pending 1", 0, False], out
+        badge("TransmogButton") or "-", pendingLabel() or "-", #shownRows(), GroupLootForeverFrame.shown,
+        pendingAnchor() == GroupLootFrame1.LootButtonContainer.NeedButton }'''))
+    assert out == [2, "-", 1, "-", "1", 0, False, True], out
 
 
 @case("hovering the game's Need button adds the names under its own tooltip")
@@ -489,7 +496,7 @@ def _():
       return { GroupLootForeverTestFrame.shown, badge("NeedButton") or "-", badge("GreedButton") or "-",
         badge("PassButton") or "-", pendingLabel() or "-", #shownRows(), enter("NeedButton") }''', setup="group = {}"))
     shown, need, greed, passed, pending, rows, tip = out
-    assert (shown, need, greed, passed, pending, rows) == (True, 1, 1, 1, "Pending 2", 0), out
+    assert (shown, need, greed, passed, pending, rows) == (True, 1, 1, 1, "2", 0), out
     assert tip == ["Need", "|cff0070ddThrall|r (34)"], tip
 
 

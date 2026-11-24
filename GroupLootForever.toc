@@ -1,7 +1,7 @@
 ## Interface: 16001
 ## Title: Group Loot Forever
 ## Notes: While an item is rolled for in your group, shows how many picked Need, Greed or Pass and who is still pending. /glf for help.
-## Version: 0.2.0
+## Version: 0.3.0
 ## X-Curse-Project-ID: 1824599
 ## IconTexture: Interface\AddOns\GroupLootForever\Media\icon
 ## SavedVariables: GroupLootForeverDB

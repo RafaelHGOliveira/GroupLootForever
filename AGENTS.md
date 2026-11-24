@@ -13,7 +13,7 @@ links the GitHub repo, and the README links the CurseForge page.
 
 ## Release
 
-`pwsh -File release.ps1 <version> <changelog.md>`, beta unless `-ReleaseType release`.
+`pwsh -NoProfile -File release.ps1 <version> <changelog.md>`, beta unless `-ReleaseType release`.
 It runs the test, bumps the `.toc`, commits "Release X", tags, pushes, uploads the
 `git archive` zip to CurseForge and copies the files into the game. Release only when
 Rafael asks.
@@ -21,7 +21,8 @@ Rafael asks.
 ## After each change
 
 1. `uv run tests/test_rolls.py` must print `ALL OK` (`-v` prints each case). A new chat
-   line, history field or end condition gets its case.
+   line, history field or end condition gets its case. The pre-commit hook in `.githooks/`
+   runs it too (enable per clone: `git config core.hooksPath .githooks`).
 2. Commit and push.
 3. Copy `GroupLootForever.lua` and `GroupLootForever.toc` to
    `C:\Program Files (x86)\World of Warcraft\_forever_\Interface\AddOns\GroupLootForever\`
@@ -35,6 +36,10 @@ chat strings. The stub follows the client: no GroupLootFrameTemplate, a missing 
 is nil, and `drawn(f)` is false for a frame anchored to one with no points. When the game
 shows something the stub allowed, fix the stub too. The C_LootHistory shape in the test is the retail one, a guess until a
 debug log from the game shows it.
+
+`/glf test` copies the roll frame's parts, not its clipping, parent, scale or strata, so it
+proves nothing about what is drawn outside the frame's rect: "Pending N" beside the frame
+showed on the copy and not on a real roll (2026-11-23). Only a real roll confirms that.
 
 ## Debug log
 

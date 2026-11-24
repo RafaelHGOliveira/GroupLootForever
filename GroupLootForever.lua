@@ -4,8 +4,9 @@
 --
 -- Where it shows: on the game's own roll frame while it is open, a number in the corner
 -- of each button (its tooltip gets the names) and the pending count, in gold, left of the
--- Need and Greed buttons. The game closes that frame once you pick, so from then on the
--- roll moves to a small panel of this addon's own until it ends.
+-- Need and Greed buttons. The game closes that frame once you pick; nothing shows after
+-- that. Up to 0.2.0 a panel of this addon's own kept the roll after the pick; Rafael had
+-- it removed on 2026-11-24.
 -- "Pending N" beside the frame, outside its right edge, showed on the /glf test copy but
 -- not on a real roll (2026-11-23, cause not found), so the count now sits inside the frame.
 -- The roll frame on this client, seen with /glf dump on 2026-11-22: GroupLootFrame1..4,
@@ -15,7 +16,7 @@
 -- Older layouts (frame.NeedButton, GroupLootFrame1NeedButton) are tried too.
 -- There is no GroupLootFrameTemplate, so /glf test clones GroupLootFrame1 part by part.
 -- GroupLootContainer is hidden with no anchor until a roll shows: a frame anchored to it
--- is not drawn, so the copy and the panel use the spot saved from a real roll frame.
+-- is not drawn, so the copy uses the spot saved from a real roll frame.
 --
 -- Where the picks come from:
 -- 1. The loot chat lines. Forever's GlobalStrings (build 1.60.1.70959, wago.tools) have
@@ -30,7 +31,7 @@
 -- passed" line, when the history names a winner, at CANCEL_ALL_LOOT_ROLLS, or when the
 -- roll time runs out. /glf debug logs all of it.
 --
--- Nothing here is secure code: the panel moves and updates in combat. Names and chat
+-- Nothing here is secure code: the counts update in combat. Names and chat
 -- text can be secret values on the modern client; those are skipped.
 --
 -- Text sits only on button font strings (SetText): on Forever a separate font string
@@ -39,7 +40,6 @@
 local addon = {}
 GroupLootForever = addon
 
-local ROW_H, ICON, PAD, GAP = 22, 20, 6, 4
 local LOG_MAX = 1000
 local TIMEOUT_EXTRA = 5 -- seconds past the roll time before a row is dropped anyway
 local TEST_TIME = 30
@@ -283,29 +283,7 @@ local function onHistory(encounterID, lootListID)
 end
 addon.onHistory = onHistory
 
--- Panel -----------------------------------------------------------------------------
-
-local panel = CreateFrame("Frame", "GroupLootForeverFrame", UIParent,
-  BackdropTemplateMixin and "BackdropTemplate" or nil)
-panel:Hide()
-panel:SetFrameStrata("MEDIUM")
-panel:SetClampedToScreen(true)
-panel:SetMovable(true)
-panel:EnableMouse(true)
-panel:RegisterForDrag("LeftButton")
-panel:SetScript("OnDragStart", panel.StartMoving)
-panel:SetScript("OnDragStop", function(self)
-  self:StopMovingOrSizing()
-  local point, _, rel, x, y = self:GetPoint()
-  GroupLootForeverDB.point = { point, rel, x, y }
-end)
-if panel.SetBackdrop then
-  panel:SetBackdrop({ bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
-    edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border", edgeSize = 12,
-    insets = { left = 3, right = 3, top = 3, bottom = 3 } })
-  panel:SetBackdropColor(0, 0, 0, 0.8)
-end
-addon.panel = panel
+-- Tooltips --------------------------------------------------------------------------
 
 -- Where the game opens its roll frames. GroupLootContainer has no anchor until a roll
 -- shows (Forever 2026-11-22: "Button 256x1 hidden", no points), and a frame anchored to
@@ -331,18 +309,6 @@ local function seeRollFrame(frame)
   GroupLootForeverDB.rollAt = { x * s, y * s }
 end
 
--- Until dragged, the panel sits where the game opens its roll frames: a roll you picked
--- stays where its frame was.
-local function place()
-  local p = GroupLootForeverDB.point
-  if p then
-    panel:ClearAllPoints()
-    panel:SetPoint(p[1], UIParent, p[2], p[3], p[4])
-  else
-    atRollFrames(panel)
-  end
-end
-
 local function hideTooltip() GameTooltip:Hide() end
 
 -- The names of one category on the tooltip. With a title, the tooltip is ours: it is
@@ -366,53 +332,6 @@ end
 
 local function showNames(self)
   nameLines(self, self.roll, self.cat.key, self.cat.label)
-end
-
-local function showItem(self)
-  local r = self.roll
-  if not r.link then return end
-  GameTooltip:SetOwner(self, "ANCHOR_TOP")
-  GameTooltip:SetHyperlink(r.link)
-  GameTooltip:Show()
-end
-
-local function textButton(parent)
-  local b = CreateFrame("Button", nil, parent)
-  b:SetHeight(ROW_H)
-  b:SetNormalFontObject("GameFontHighlightSmall")
-  b:SetText(" ")
-  b:SetScript("OnLeave", hideTooltip)
-  return b
-end
-
-local rows = {}
-addon.rows = rows
-
-local function newRow(i)
-  local row = CreateFrame("Frame", nil, panel)
-  row:SetHeight(ROW_H)
-  row:SetPoint("TOPLEFT", panel, "TOPLEFT", PAD, -PAD - (i - 1) * ROW_H)
-  row.icon = row:CreateTexture(nil, "ARTWORK")
-  row.icon:SetSize(ICON, ICON)
-  row.icon:SetPoint("LEFT")
-  row.item = textButton(row)
-  row.item:SetPoint("LEFT", row.icon, "RIGHT", GAP, 0)
-  row.item:SetScript("OnEnter", showItem)
-  row.counts = {}
-  for _, cat in ipairs(CATS) do
-    local b = textButton(row)
-    b.cat = cat
-    b:SetScript("OnEnter", showNames)
-    row.counts[cat.key] = b
-  end
-  rows[i] = row
-  return row
-end
-
-local function fit(b)
-  local fs = b:GetFontString()
-  b:SetWidth((fs and fs:GetStringWidth() or 40) + 6)
-  return b:GetWidth()
 end
 
 -- The game's roll frame ---------------------------------------------------------------
@@ -493,46 +412,10 @@ local function decorate(frame)
   return d
 end
 
-local function fitPanel(list)
-  if #list == 0 then panel:Hide() return end
-  local width = 0
-  for i, r in ipairs(list) do
-    local row = rows[i] or newRow(i)
-    row.roll, row.item.roll = r, r
-    row.icon:SetTexture(r.texture)
-    local q = ITEM_QUALITY_COLORS and ITEM_QUALITY_COLORS[r.quality or 1]
-    row.item:SetText((q and q.hex or "") .. (r.name or "?") .. (q and "|r" or ""))
-    local x = ICON + GAP + fit(row.item) + GAP
-    for _, cat in ipairs(CATS) do
-      local b = row.counts[cat.key]
-      local n = #addon.names(r, cat.key)
-      b.roll = r
-      if cat.optional and n == 0 then
-        b:Hide()
-      else
-        b:SetText(format("|cff%s%s %d|r", n > 0 and cat.color or "707070", cat.label, n))
-        b:ClearAllPoints()
-        b:SetPoint("LEFT", row, "LEFT", x, 0)
-        x = x + fit(b) + GAP
-        b:Show()
-      end
-    end
-    width = math.max(width, x)
-    row:Show()
-  end
-  for i = #list + 1, #rows do rows[i]:Hide() end
-  for i = 1, #list do rows[i]:SetWidth(width) end
-  panel:SetSize(width + 2 * PAD, #list * ROW_H + 2 * PAD)
-  place()
-  panel:Show()
-end
-
 function refresh()
-  local onFrame = {}
   for _, frame in ipairs(rollFrames()) do
     local d = decorate(frame)
     local r = frameRoll(frame)
-    if r then onFrame[r] = true end
     if r and frame ~= GroupLootForeverTestFrame then seeRollFrame(frame) end
     for key, badge in pairs(d.badges) do
       local n = r and #addon.names(r, key) or 0
@@ -554,12 +437,6 @@ function refresh()
       end
     end
   end
-  -- The panel keeps the rolls whose frame the game has closed: the ones you picked.
-  local list = {}
-  for _, r in ipairs(rolls) do
-    if not onFrame[r] then list[#list + 1] = r end
-  end
-  fitPanel(list)
 end
 
 -- /glf test: a made-up roll, on a copy of the game's roll frame, so it looks like the real
@@ -568,8 +445,8 @@ end
 -- texture (same atlas, or file and tex coords, same draw layer), font string and child
 -- frame, with the same sizes and anchors, and the same keys (.Name, .IconFrame.Icon,
 -- .LootButtonContainer.NeedButton...). Nothing of the game's runs on it. A click on a
--- button closes it, as the game does when you pick, and the roll moves to the panel.
--- Without GroupLootFrame1, the roll goes straight to the panel.
+-- button closes it, as the game does when you pick. Without GroupLootFrame1 there is
+-- nothing to show the test on.
 local testFrame -- nil: not built yet; false: nothing to copy
 local TEST_ICON = "Interface\\Icons\\INV_Sword_04"
 local TEST_ITEM = "Electrocutioner Leg"
@@ -771,7 +648,7 @@ events:SetScript("OnEvent", function(_, event, ...)
     if ... ~= "GroupLootForever" then return end
     GroupLootForeverDB = GroupLootForeverDB or {}
     GroupLootForeverDB.log = {}
-    place()
+    GroupLootForeverDB.point = nil -- the removed panel's position
     for _, e in ipairs({ "START_LOOT_ROLL", "CANCEL_LOOT_ROLL", "CANCEL_ALL_LOOT_ROLLS",
       "CHAT_MSG_LOOT", "LOOT_HISTORY_UPDATE_DROP", "GROUP_ROSTER_UPDATE" }) do
       -- An event the client lacks would raise an error when registered.
@@ -813,11 +690,8 @@ SlashCmdList.GROUPLOOTFOREVER = function(msg)
   local say = function(t) DEFAULT_CHAT_FRAME:AddMessage("|cff40c0ffGroup Loot Forever:|r " .. t) end
   if msg == "test" then
     testRoll()
-    say(format("a test roll for %d seconds. Drag the panel to move it.", TEST_TIME))
-  elseif msg == "reset" then
-    GroupLootForeverDB.point = nil
-    place()
-    say("panel back in its place.")
+    say(testFrame and format("a test roll for %d seconds.", TEST_TIME)
+      or "no roll frame of the game's to copy: roll for something once, then try again.")
   elseif msg == "dump" then
     -- The real roll frame and the test copy, part by part, into the debug log.
     addon.dump(GroupLootFrame1, "GroupLootFrame1", 3)
@@ -829,6 +703,6 @@ SlashCmdList.GROUPLOOTFOREVER = function(msg)
     GroupLootForeverDB.debug = not GroupLootForeverDB.debug
     say("debug log " .. (GroupLootForeverDB.debug and "on: /reload saves it." or "off."))
   else
-    say("/glf test (show a test roll), /glf reset (panel position), /glf debug (log for bug reports).")
+    say("/glf test (show a test roll), /glf debug (log for bug reports).")
   end
 end

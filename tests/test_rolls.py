@@ -3,7 +3,7 @@
 # dependencies = ["lupa"]
 # ///
 """Loads GroupLootForever.lua against a stubbed WoW API, plays loot roll events and chat
-lines, and checks the counts on the panel and the names in the tooltips.
+lines, and checks the counts on the game's roll frame and the names in the tooltips.
 Run: uv run tests/test_rolls.py [-v]
 
 The chat strings are Forever's own (GlobalStrings, build 1.60.1.70959, wago.tools). What
@@ -227,28 +227,30 @@ function drawn(f)
   return true
 end
 
--- The panel's rows, as { item text, { "Need 1", ... } } for the shown ones.
+-- Each active roll as { item name, { "Need 1", ... } }: the counts the roll frame shows,
+-- with Disenchant and Transmog only once someone picks them.
 function shownRows()
   local out = {}
-  for _, row in ipairs(GroupLootForever.rows) do
-    if visible(row) then
-      local counts = {}
-      for _, cat in ipairs(GroupLootForever.CATS) do
-        local b = row.counts[cat.key]
-        if visible(b) then tinsert(counts, (b.text:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", ""))) end
-      end
-      tinsert(out, { row.item.text, counts })
+  for _, r in ipairs(GroupLootForever.rolls) do
+    local counts = {}
+    for _, cat in ipairs(GroupLootForever.CATS) do
+      local n = #GroupLootForever.names(r, cat.key)
+      if not cat.optional or n > 0 then tinsert(counts, cat.label .. " " .. n) end
     end
+    tinsert(out, { r.name, counts })
   end
   return out
 end
 
--- Tooltip lines when hovering one count of one row.
-function hover(rowIndex, key)
-  GameTooltip.lines = {}
-  local b = GroupLootForever.rows[rowIndex].counts[key]
-  b.scripts.OnEnter(b)
-  return GameTooltip.lines
+-- Tooltip lines when hovering the pending count on the game's frame.
+function hoverPending()
+  for _, f in ipairs(frames) do
+    if rawget(f, "parent") == rf() and rawget(f, "cat") then
+      GameTooltip.lines = {}
+      f.scripts.OnEnter(f)
+      return GameTooltip.lines
+    end
+  end
 end
 """
 
@@ -267,7 +269,7 @@ def run(script, setup=PARTY):
     lua = L.LuaRuntime(unpack_returned_tuples=True)
     lua.execute(STUBS)
     lua.execute(setup)
-    lua.globals().GroupLootForeverDB = None
+    lua.execute("GroupLootForeverDB = GroupLootForeverDB_seed")  # saved variables: nil unless a case seeds them
     lua.execute(ADDON.read_text(encoding="utf-8"))
     lua.execute('fire("ADDON_LOADED", "GroupLootForever")')
     return lua.execute(script)
@@ -293,7 +295,7 @@ def case(name):
 @case("a new roll: everyone online in the group is pending, the offline one is not")
 def _():
     rows = table(run('items[1] = 100; fire("START_LOOT_ROLL", 1, 60000); return shownRows()'))
-    assert rows == [["|cff1eff00item100|r", ["Pending 4", "Need 0", "Greed 0", "Pass 0"]]], rows
+    assert rows == [["item100", ["Pending 4", "Need 0", "Greed 0", "Pass 0"]]], rows
 
 
 @case("picks from chat: someone's Need, your Greed, an automatic pass")
@@ -310,14 +312,14 @@ def _():
 @case("hover a count: class-coloured names with the level in brackets, sorted")
 def _():
     lines = table(run(r'''
-      items[1] = 100; fire("START_LOOT_ROLL", 1, 60000)
+      items[1] = 100; fire("START_LOOT_ROLL", 1, 60000); openFrame(1)
       fire("CHAT_MSG_LOOT", format(LOOT_ROLL_NEED, 7, "Uther", link(100)))
       fire("CHAT_MSG_LOOT", format(LOOT_ROLL_NEED, 7, "Thrall-Stormrage", link(100)))
-      return { hover(1, "need"), hover(1, "pending"), hover(1, "pass") }'''))
+      return { enter("NeedButton"), hoverPending(), enter("PassButton") }'''))
     need, pending, passed = lines
-    assert need == ["Need", "|cff0070ddThrall|r (34)", "|cfff48cbaUther|r (35)"], need
+    assert need == ["NeedButton", "|cff0070ddThrall|r (34)", "|cfff48cbaUther|r (35)"], need
     assert pending == ["Pending", "|cfffff468Eraluna|r (32)", "|cff3fc7ebJaina|r (33)"], pending
-    assert passed == [], passed  # a zero count shows no tooltip
+    assert passed == ["PassButton"], passed  # nobody passed: only the game's own line
 
 
 @case("Disenchant shows up only once someone picks it")
@@ -334,17 +336,17 @@ def _():
     rows = table(run(r'''
       items[1] = 100; fire("START_LOOT_ROLL", 1, 60000)
       fire("CHAT_MSG_LOOT", format(LOOT_ROLL_ALL_PASSED, 7, link(100)))
-      return { shownRows(), GroupLootForeverFrame.shown }'''))
-    assert rows == [[], False], rows
+      return shownRows()'''))
+    assert rows == [], rows
 
 
 @case("'You passed on' counts as your pass, not a player named You")
 def _():
     lines = table(run(r'''
-      items[1] = 100; fire("START_LOOT_ROLL", 1, 60000)
+      items[1] = 100; fire("START_LOOT_ROLL", 1, 60000); openFrame(1)
       fire("CHAT_MSG_LOOT", format(LOOT_ROLL_PASSED_SELF, 7, link(100)))
-      return hover(1, "pass")'''))
-    assert lines == ["Pass", "|cfffff468Eraluna|r (32)"], lines
+      return enter("PassButton")'''))
+    assert lines == ["PassButton", "|cfffff468Eraluna|r (32)"], lines
 
 
 @case("two rolls for the same item: a second pick by the same player goes to the second")
@@ -365,10 +367,10 @@ def _():
       fire("START_LOOT_ROLL", 1, 60000); fire("START_LOOT_ROLL", 2, 60000)
       fire("CHAT_MSG_LOOT", format(LOOT_ROLL_WON_NO_SPAM_NEED, 7, "Thrall", 87, link(100)))
       return shownRows()'''))
-    assert [r[0] for r in rows] == ["|cff1eff00item200|r"], rows
+    assert [r[0] for r in rows] == ["item200"], rows
 
 
-@case("CANCEL_LOOT_ROLL keeps the row: it may only mean you picked")
+@case("CANCEL_LOOT_ROLL keeps the roll: it may only mean you picked")
 def _():
     rows = table(run(r'''
       items[1] = 100; fire("START_LOOT_ROLL", 1, 60000); fire("CANCEL_LOOT_ROLL", 1)
@@ -376,17 +378,17 @@ def _():
     assert len(rows) == 1, rows
 
 
-@case("the roll time runs out: the row goes away")
+@case("the roll time runs out: the roll goes away")
 def _():
     out = table(run(r'''
       items[1] = 100; fire("START_LOOT_ROLL", 1, 60000)
       for _, t in ipairs(timers) do
-        if t.t > 0 then t.fn(); return { t.t, GroupLootForeverFrame.shown } end
+        if t.t > 0 then t.fn(); return { t.t, #shownRows() } end
       end'''))
-    assert out == [65, False], out
+    assert out == [65, 0], out
 
 
-@case("the game's frame open: numbers on its buttons, pending left of Need, no panel row")
+@case("the game's frame open: numbers on its buttons, pending left of Need")
 def _():
     out = table(run(r'''
       items[1] = 100; fire("START_LOOT_ROLL", 1, 60000); openFrame(1)
@@ -394,9 +396,9 @@ def _():
       fire("CHAT_MSG_LOOT", format(LOOT_ROLL_NEED, 7, "Uther", link(100)))
       fire("CHAT_MSG_LOOT", format(LOOT_ROLL_PASSED, 7, "Jaina", link(100)))
       return { badge("NeedButton") or "-", badge("GreedButton") or "-", badge("PassButton") or "-",
-        badge("TransmogButton") or "-", pendingLabel() or "-", #shownRows(), GroupLootForeverFrame.shown,
+        badge("TransmogButton") or "-", pendingLabel() or "-",
         pendingAnchor() == GroupLootFrame1.LootButtonContainer.NeedButton }'''))
-    assert out == [2, "-", 1, "-", "1", 0, False, True], out
+    assert out == [2, "-", 1, "-", "1", True], out
 
 
 @case("hovering the game's Need button adds the names under its own tooltip")
@@ -408,16 +410,16 @@ def _():
     assert lines == [["NeedButton", "|cff0070ddThrall|r (34)"], ["GreedButton"]], lines
 
 
-@case("you pick, the game closes its frame: the roll moves to the panel")
+@case("you pick, the game closes its frame: nothing of the addon shows, the roll stays counted")
 def _():
     out = table(run(r'''
       items[1] = 100; fire("START_LOOT_ROLL", 1, 60000); openFrame(1)
       fire("CHAT_MSG_LOOT", format(LOOT_ROLL_GREED_SELF, 7, link(100)))
       closeFrame()
-      return { shownRows(), badge("GreedButton") or "-", pendingLabel() or "-" }'''))
-    rows, greed, pending = out
+      return { shownRows(), badge("GreedButton") or "-", pendingLabel() or "-", GroupLootForeverFrame == nil }'''))
+    rows, greed, pending, nopanel = out
     assert rows[0][1] == ["Pending 3", "Need 0", "Greed 1", "Pass 0"], rows
-    assert (greed, pending) == ("-", "-"), out
+    assert (greed, pending, nopanel) == ("-", "-", True), out
 
 
 @case("the frame reused for another roll shows that roll's counts")
@@ -428,7 +430,7 @@ def _():
       fire("CHAT_MSG_LOOT", format(LOOT_ROLL_NEED, 7, "Thrall", link(100)))
       openFrame(2)
       return { badge("NeedButton") or "-", #shownRows() }'''))
-    assert out == ["-", 1], out
+    assert out == ["-", 2], out
 
 
 @case("CANCEL_ALL_LOOT_ROLLS ends every roll")
@@ -437,8 +439,8 @@ def _():
       items[1], items[2] = 100, 200
       fire("START_LOOT_ROLL", 1, 60000); fire("START_LOOT_ROLL", 2, 60000)
       fire("CANCEL_ALL_LOOT_ROLLS")
-      return GroupLootForeverFrame.shown''')
-    assert shown is False, shown
+      return #shownRows()''')
+    assert shown == 0, shown
 
 
 @case("loot history players replace the group, and its states are the picks")
@@ -463,8 +465,8 @@ def _():
       items[1] = 100; fire("START_LOOT_ROLL", 1, 60000)
       history["5:2"] = { itemHyperlink = link(100), winner = { playerName = "Thrall" }, rollInfos = {} }
       fire("LOOT_HISTORY_UPDATE_DROP", 5, 2)
-      return GroupLootForeverFrame.shown''')
-    assert shown is False, shown
+      return #shownRows()''')
+    assert shown == 0, shown
 
 
 @case("a broken history call is logged, not raised")
@@ -494,13 +496,13 @@ def _():
       SlashCmdList.GROUPLOOTFOREVER("test")
       rollFrameUnderTest = GroupLootForeverTestFrame
       return { GroupLootForeverTestFrame.shown, badge("NeedButton") or "-", badge("GreedButton") or "-",
-        badge("PassButton") or "-", pendingLabel() or "-", #shownRows(), enter("NeedButton") }''', setup="group = {}"))
-    shown, need, greed, passed, pending, rows, tip = out
-    assert (shown, need, greed, passed, pending, rows) == (True, 1, 1, 1, "2", 0), out
+        badge("PassButton") or "-", pendingLabel() or "-", enter("NeedButton") }''', setup="group = {}"))
+    shown, need, greed, passed, pending, tip = out
+    assert (shown, need, greed, passed, pending) == (True, 1, 1, 1, "2"), out
     assert tip == ["Need", "|cff0070ddThrall|r (34)"], tip
 
 
-@case("/glf test: a click on the copy closes it, like a pick, and the roll moves to the panel")
+@case("/glf test: a click on the copy closes it, like a pick; the roll stays until the test ends")
 def _():
     out = table(run(r'''
       SlashCmdList.GROUPLOOTFOREVER("test")
@@ -509,17 +511,17 @@ def _():
       return { GroupLootForeverTestFrame.shown, shownRows() }''', setup="group = {}"))
     shown, rows = out
     assert shown is False, out
-    assert rows == [["|cff0070ddElectrocutioner Leg|r", ["Pending 2", "Need 1", "Greed 1", "Pass 1"]]], rows
+    assert rows == [["Electrocutioner Leg", ["Pending 2", "Need 1", "Greed 1", "Pass 1"]]], rows
 
 
-@case("/glf test without GroupLootFrame1 to copy: the made-up roll goes to the panel")
+@case("/glf test without GroupLootFrame1 to copy: says so")
 def _():
     out = table(run(r'''
+      local said
+      DEFAULT_CHAT_FRAME = { AddMessage = function(_, t) said = t end }
       SlashCmdList.GROUPLOOTFOREVER("test")
-      return { shownRows(), hover(1, "pending") }''', setup="group = {}; GroupLootFrame1 = nil"))
-    rows, pending = out
-    assert rows == [["|cff0070ddElectrocutioner Leg|r", ["Pending 2", "Need 1", "Greed 1", "Pass 1"]]], rows
-    assert pending == ["Pending", "|cffaad372Rexxar|r (31)", "|cfffff468Valeera|r (32)"], pending
+      return { said }''', setup="group = {}; GroupLootFrame1 = nil"))
+    assert "no roll frame" in out[0], out
 
 
 @case("the copy is a clone: the same keys, not the game's scripts, not this addon's own parts")
@@ -553,16 +555,16 @@ def _():
     out = table(run(r'''
       SlashCmdList.GROUPLOOTFOREVER("test")
       for _, t in ipairs(timers) do if t.t == 30 then t.fn() end end
-      return { GroupLootForeverTestFrame.shown, GroupLootForeverFrame.shown }''', setup="group = {}"))
-    assert out == [False, False], out
+      return { GroupLootForeverTestFrame.shown, #shownRows() }''', setup="group = {}"))
+    assert out == [False, 0], out
 
 @case("leaving the group clears the rolls")
 def _():
     shown = run(r'''
       items[1] = 100; fire("START_LOOT_ROLL", 1, 60000)
       group = {}; fire("GROUP_ROSTER_UPDATE")
-      return GroupLootForeverFrame.shown''')
-    assert shown is False, shown
+      return #shownRows()''')
+    assert shown == 0, shown
 
 
 @case("roll frame position: container without anchor -> bottom centre guess, and drawn")
@@ -573,20 +575,19 @@ def _():
       local f = GroupLootForeverTestFrame
       local b = f.LootButtonContainer.GreedButton
       local t, copyDrawn = f.point, drawn(f)
-      b.scripts.OnClick(b)
-      return { t[1], t[2] == UIParent, t[3], t[4], t[5], copyDrawn, drawn(GroupLootForeverFrame) }''',
+      return { t[1], t[2] == UIParent, t[3], t[4], t[5], copyDrawn }''',
         setup="group = {}; GroupLootContainer = CreateFrame('Frame', nil, UIParent)"))
-    assert out == ["BOTTOM", True, "BOTTOM", 0, 200, True, True], out
+    assert out == ["BOTTOM", True, "BOTTOM", 0, 200, True], out
 
 
-@case("roll frame position: a real roll frame seen -> saved, and the copy and panel go there")
+@case("roll frame position: a real roll frame seen -> saved, and the copy goes there")
 def _():
     out = table(run(r'''
       items[1] = 100; fire("START_LOOT_ROLL", 1, 60000); openFrame(1); closeFrame()
       SlashCmdList.GROUPLOOTFOREVER("test")
-      local t, p = GroupLootForeverTestFrame.point, GroupLootForeverFrame.point
-      return { GroupLootForeverDB.rollAt, t[3], t[4], t[5], p[3], p[4], p[5] }'''))
-    assert out == [[640, 180], "BOTTOMLEFT", 640, 180, "BOTTOMLEFT", 640, 180], out
+      local t = GroupLootForeverTestFrame.point
+      return { GroupLootForeverDB.rollAt, t[3], t[4], t[5] }'''))
+    assert out == [[640, 180], "BOTTOMLEFT", 640, 180], out
 
 
 @case("roll frame position: the container once it has an anchor")
@@ -599,15 +600,11 @@ def _():
         setup="group = {}; GroupLootContainer = CreateFrame('Frame', nil, UIParent)"))
     assert out == ["BOTTOM", True, "BOTTOM"], out
 
-@case("the panel position is saved on drag and restored by /glf reset")
+@case("the removed panel's saved position is dropped at load")
 def _():
-    out = table(run(r'''
-      GroupLootForeverFrame:SetPoint("TOP", UIParent, "TOP", 10, -20) -- dragged there
-      GroupLootForeverFrame.scripts.OnDragStop(GroupLootForeverFrame)
-      local saved = GroupLootForeverDB.point and GroupLootForeverDB.point[3]
-      SlashCmdList.GROUPLOOTFOREVER("reset")
-      return { saved, GroupLootForeverDB.point == nil }'''))
-    assert out == [10, True], out
+    out = run(r'''return GroupLootForeverDB.point == nil''',
+        setup=PARTY + "GroupLootForeverDB_seed = { point = { 'TOP', 'TOP', 10, -20 } }")
+    assert out is True, out
 
 
 failed = 0

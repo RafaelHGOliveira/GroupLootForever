@@ -1,6 +1,6 @@
 # Group Loot Forever
 
-WoW Forever addon: a panel that counts the picks of each group loot roll (pending, Need,
+WoW Forever addon: counts on the game's roll frame for the picks of each group loot roll (pending, Need,
 Greed, Disenchant, Transmog, Pass) and lists the names on hover. The README says what it
 does for players; this file is the workflow.
 

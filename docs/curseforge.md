@@ -6,15 +6,12 @@ When an item drops in your group, the roll window only shows your own choice. Gr
 
 - **On the game's own roll window:** a number in the corner of the Need, Greed and Pass buttons, and the **pending** count in gold, left of Need and Greed.
 - **Names on hover:** hover a button and its tooltip lists who picked it (the pending count lists who has not), each name in its class colour with the level in brackets, e.g. *Thrall (34)*.
-- **After you pick:** the game closes its roll window, so the roll moves to a small panel with the same counts (Pending, Need, Greed, Pass) until it ends. You can watch the rest of the group decide.
 - **Disenchant and Transmog** get a count too, once someone picks them.
 - **Works in combat**, and in any language: it reads the game's own loot messages.
-- **Drag it anywhere.** The position is saved.
 
 ## Commands
 
-- `/glf test`: a made-up roll for 30 seconds on a copy of the game's roll window, to see it all without a group; click a button and the roll moves to the panel, as after a real pick
-- `/glf reset`: put the panel back in its default place
+- `/glf test`: a made-up roll for 30 seconds on a copy of the game's roll window, to see it all without a group
 - `/glf debug`: turn the debug log on or off
 
 ## FAQ

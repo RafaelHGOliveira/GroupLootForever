@@ -18,14 +18,7 @@ gets the names. The pending count, in gold, sits left of the Need and Greed butt
                        Thrall (34)
 ```
 
-The game closes that frame once you pick. From then on the roll stays in a small panel
-until it ends, so you can watch the rest of the group decide:
-
-```
-┌───────────────────────────────────────────────────────────────┐
-│ [icon] Electrocutioner Leg  Pending 2  Need 1  Greed 1  Pass 1 │
-└───────────────────────────────────────────────────────────────┘
-```
+The game closes that frame once you pick, and the counts go with it.
 
 Disenchant and Transmog get a count too, once someone picks them. It all works in combat.
 
@@ -38,8 +31,7 @@ Get it from [CurseForge](https://www.curseforge.com/wow/addons/grouplootforever)
 
 | Command | |
 |---|---|
-| `/glf test` | a made-up roll for 30 seconds, on a copy of the game's roll frame; click a button and it moves to the panel, as after a real pick. Drag the panel to place it |
-| `/glf reset` | put the panel back in its place (drag it to move it) |
+| `/glf test` | a made-up roll for 30 seconds, on a copy of the game's roll frame; click a button and it closes, as after a real pick |
 | `/glf debug` | turn the debug log on or off |
 
 ## How it knows
